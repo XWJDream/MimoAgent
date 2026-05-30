@@ -115,6 +115,13 @@ MimoAgent/
 
 ---
 
+## 致谢
+
+- [小米 MiMo](https://ai.mi.com) — 提供 MiMo 大模型 API 支持
+- [Electron](https://www.electronjs.org/) / [React](https://react.dev/) / [Vite](https://vitejs.dev/) / [Tailwind CSS](https://tailwindcss.com/) — 技术栈
+
+---
+
 ## 许可证
 
 MIT License
