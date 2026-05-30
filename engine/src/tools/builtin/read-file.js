@@ -1,0 +1,62 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ReadFileTool = void 0;
+const promises_1 = require("fs/promises");
+const path_1 = require("path");
+const base_js_1 = require("../base.js");
+class ReadFileTool extends base_js_1.BaseTool {
+    name = 'read_file';
+    description = 'Read the contents of a file at the given absolute path. Returns content with line numbers.';
+    riskLevel = 'read';
+    categories = ['file'];
+    parameters = {
+        type: 'function',
+        function: {
+            name: 'read_file',
+            description: 'Read the contents of a file at the given absolute path.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    file_path: { type: 'string', description: 'Absolute path to the file' },
+                    offset: { type: 'number', description: 'Line number to start from (0-indexed)' },
+                    limit: { type: 'number', description: 'Max lines to read' },
+                },
+                required: ['file_path'],
+            },
+        },
+    };
+    async execute(args, context) {
+        const { file_path, offset, limit } = args;
+        const resolved = (0, path_1.resolve)(file_path);
+        // Security check
+        const rel = (0, path_1.relative)(context.workingDirectory, resolved);
+        if (rel.startsWith('..')) {
+            return { output: 'Error: Path is outside working directory', isError: true };
+        }
+        try {
+            const stats = await (0, promises_1.stat)(resolved);
+            if (stats.isDirectory()) {
+                return { output: 'Error: Path is a directory, not a file. Use shell with ls command instead.', isError: true };
+            }
+            const content = await context.fileCache.getOrLoad(resolved);
+            const lines = content.split('\n');
+            const start = offset ?? 0;
+            const end = limit ? start + limit : lines.length;
+            const selected = lines.slice(start, end);
+            const formatted = selected.map((line, i) => `${start + i + 1}\t${line}`).join('\n');
+            return {
+                output: formatted || '(empty file)',
+                isError: false,
+                metadata: { totalLines: lines.length, start, end: Math.min(end, lines.length) },
+            };
+        }
+        catch (error) {
+            return {
+                output: `Error reading file: ${error instanceof Error ? error.message : String(error)}`,
+                isError: true,
+            };
+        }
+    }
+}
+exports.ReadFileTool = ReadFileTool;
+//# sourceMappingURL=read-file.js.map

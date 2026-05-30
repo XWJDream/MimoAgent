@@ -1,0 +1,52 @@
+{
+  "name": "mimo-agent",
+  "version": "0.1.0",
+  "description": "AI coding agent powered by mimo-v2.5-pro",
+  "type": "module",
+  "bin": {
+    "mimo": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest",
+    "lint": "eslint src/",
+    "format": "prettier --write src/"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.2.1",
+    "@types/react": "^19.2.15",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "diff": "^7.0.0",
+    "dockerode": "^4.0.2",
+    "glob": "^11.0.1",
+    "ink": "^7.0.4",
+    "ink-markdown": "^1.0.4",
+    "ink-text-input": "^6.0.0",
+    "marked": "^15.0.4",
+    "marked-terminal": "^7.2.1",
+    "openai": "^4.78.0",
+    "ora": "^8.1.1",
+    "p-limit": "^6.1.0",
+    "react": "^19.2.6",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/diff": "^6.0.0",
+    "@types/dockerode": "^3.3.31",
+    "@types/node": "^22.10.5",
+    "@typescript-eslint/eslint-plugin": "^8.18.2",
+    "@typescript-eslint/parser": "^8.18.2",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}

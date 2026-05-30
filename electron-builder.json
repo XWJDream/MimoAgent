@@ -1,0 +1,33 @@
+{
+  "appId": "com.mimo.desktop",
+  "productName": "MimoAgent",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "engine/dist/**/*",
+    "engine/package.json",
+    "resources/icon.png"
+  ],
+  "win": {
+    "target": ["nsis"],
+    "icon": "resources/icon.ico",
+    "signAndEditExecutable": false
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "MimoAgent"
+  },
+  "mac": {
+    "target": ["dmg"],
+    "icon": "resources/icon.icns"
+  },
+  "linux": {
+    "target": ["AppImage"],
+    "icon": "resources/icon.png"
+  }
+}
