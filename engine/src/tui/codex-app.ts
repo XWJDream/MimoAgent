@@ -5,10 +5,8 @@ import type { MimoConfig } from '../config/types.js';
 import type { LoopEvent } from '../core/agent-loop.js';
 import { Agent } from '../core/agent.js';
 import { compactMessages, estimateConversationTokens } from '../context/compaction.js';
-import { EstimatedTokenizer } from '../llm/tokenizer.js';
 
 const theme = darkTheme;
-const tokenizer = new EstimatedTokenizer();
 
 interface CommandDef {
   description: string;
@@ -64,7 +62,7 @@ export class CodexApp {
         handler: async (_args, app) => {
           const conversation = app.agent.getConversation();
           app.addOutput(theme.warning('  ⟳ Compacting...'));
-          const result = compactMessages(conversation, tokenizer, {
+          const result = await compactMessages(conversation, null, {
             maxTokens: app.config.contextWindow * 0.7,
             keepRecentCount: 6,
           });
@@ -349,10 +347,10 @@ export class CodexApp {
 
     // Auto-compact check
     const conversation = this.agent.getConversation();
-    const tokens = estimateConversationTokens(conversation, tokenizer);
+    const tokens = estimateConversationTokens(conversation);
     if (tokens > this.config.contextWindow * 0.7) {
       this.addOutput(theme.warning('  ⟳ Auto-compacting...'));
-      const result = compactMessages(conversation, tokenizer, {
+      const result = await compactMessages(conversation, null, {
         maxTokens: this.config.contextWindow * 0.5,
         keepRecentCount: 6,
       });

@@ -5,11 +5,9 @@ import type { LoopEvent } from '../core/agent-loop.js';
 import { CodexRenderer } from '../tui/renderer.js';
 import { renderBox } from '../tui/box.js';
 import { compactMessages, estimateConversationTokens } from '../context/compaction.js';
-import { EstimatedTokenizer } from '../llm/tokenizer.js';
 import { darkTheme as theme } from '../tui/theme.js';
 
 const renderer = new CodexRenderer();
-const tokenizer = new EstimatedTokenizer();
 
 const SLASH_COMMANDS: Record<
   string,
@@ -48,7 +46,7 @@ const SLASH_COMMANDS: Record<
 
       renderer.renderCompactStart();
 
-      const result = compactMessages(conversation, tokenizer, {
+      const result = await compactMessages(conversation, null, {
         maxTokens: config.contextWindow * 0.7,
         keepRecentCount: 6,
       });
@@ -209,10 +207,10 @@ export async function runREPL(config: MimoConfig): Promise<void> {
     messageCount++;
     if (messageCount % 20 === 0) {
       const conversation = agent.getConversation();
-      const tokens = estimateConversationTokens(conversation, tokenizer);
+      const tokens = estimateConversationTokens(conversation);
       if (tokens > config.contextWindow * 0.7) {
         renderer.renderCompactStart();
-        const result = compactMessages(conversation, tokenizer, {
+        const result = await compactMessages(conversation, null, {
           maxTokens: config.contextWindow * 0.5,
           keepRecentCount: 6,
         });

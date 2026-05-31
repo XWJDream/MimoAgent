@@ -4,6 +4,7 @@ import type { MimoConfig } from '../config/types.js';
 import { LLMClient } from '../llm/client.js';
 import { agentLoop } from './agent-loop.js';
 import { buildSystemPrompt } from '../context/system-prompt.js';
+import { SUMMARIZER_PROMPT } from '../context/compaction.js';
 import type { ChatMessage } from '../llm/types.js';
 import { ToolRegistry } from '../tools/registry.js';
 
@@ -156,5 +157,17 @@ export class ArchitectSubAgent extends SubAgent {
     allowedToolCategories: ['file', 'search', 'task'],
     maxTurns: 15,
     temperature: 0.5,
+  };
+}
+
+// Built-in sub-agent: Summarizer
+export class SummarizerSubAgent extends SubAgent {
+  readonly config: SubAgentConfig = {
+    name: 'summarizer',
+    description: 'Conversation summarization specialist',
+    systemPromptSuffix: SUMMARIZER_PROMPT,
+    allowedToolCategories: [], // No tools needed for summarization
+    maxTurns: 1,
+    temperature: 0.1,
   };
 }

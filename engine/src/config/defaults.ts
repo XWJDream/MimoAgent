@@ -9,6 +9,7 @@ export function getDefaultConfig(): MimoConfig {
     temperature: 0.2,
     contextWindow: 128000,
     permissionMode: 'suggest',
+    toolPreset: 'act',
     allowedTools: [],
     blockedTools: [],
     allowedPaths: ['.'],

@@ -19,6 +19,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     apiKeyConfigured: false,
     apiKeyPreview: null,
     permissionMode: 'suggest',
+    toolPreset: 'act',
     maxTurns: 50,
     temperature: 0.2,
     theme: 'dark',

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { FolderSearch, Wrench, Rocket, GitBranch } from 'lucide-react';
+import { FolderSearch, Wrench, Rocket } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { useChatStore } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -8,13 +8,6 @@ const suggestions = [
   { icon: FolderSearch, title: '分析项目', desc: '理解代码结构与模块关系', prompt: '请分析这个项目的结构、主要模块和智能体调用链。' },
   { icon: Wrench, title: '修复问题', desc: '定位并修复高优先级 Bug', prompt: '请检查当前项目，找一个高优先级问题并修复。' },
   { icon: Rocket, title: '生成功能', desc: '基于需求编写新代码', prompt: '请根据项目需求，实现一个新的核心功能模块。' },
-];
-
-const recentProjects = [
-  { name: 'DiaCOQE', branch: 'main' },
-  { name: 'MimoAgent', branch: 'dev' },
-  { name: 'WebCrawler', branch: 'master' },
-  { name: 'PaperReproduce', branch: 'main' },
 ];
 
 export function MessageList() {
@@ -58,18 +51,6 @@ export function MessageList() {
               </button>
             );
           })}
-        </div>
-
-        <div className="recent-projects">
-          {recentProjects.map((proj) => (
-            <div key={proj.name} className="recent-project-card">
-              <GitBranch size={14} strokeWidth={1.7} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>{proj.name}</div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{proj.branch}</div>
-              </div>
-            </div>
-          ))}
         </div>
       </div>
     );

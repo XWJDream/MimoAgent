@@ -1,51 +1,100 @@
 import type { ChatMessage } from '../llm/types.js';
-import type { Tokenizer } from '../llm/tokenizer.js';
+import type { LLMClient } from '../llm/client.js';
 
 export interface CompactionResult {
   messages: ChatMessage[];
   originalTokens: number;
   compactedTokens: number;
   removedCount: number;
-  summaryMessage: ChatMessage;
+  summaryContent: string;
 }
 
 export interface CompactionOptions {
   maxTokens: number;
   keepSystemPrompt: boolean;
   keepRecentCount: number;
-  summaryPrefix: string;
 }
 
-const defaultOptions: CompactionOptions = {
-  maxTokens: 100000,
+const DEFAULT_OPTIONS: CompactionOptions = {
+  maxTokens: 80000,
   keepSystemPrompt: true,
   keepRecentCount: 6,
-  summaryPrefix: '[Conversation history compacted]',
 };
 
-export function shouldCompact(messages: ChatMessage[], tokenizer: Tokenizer, maxTokens: number): boolean {
-  const totalTokens = messages.reduce((sum, msg) => sum + countMessageTokens(msg, tokenizer), 0);
-  return totalTokens > maxTokens;
+export const SUMMARIZER_PROMPT = `You are a conversation summarization specialist. Your ONLY job is to produce a structured summary of a conversation history.
+
+The summary MUST preserve:
+1. **What was accomplished** — files created/modified with exact paths, features implemented, bugs fixed
+2. **Current state** — what is being worked on right now, any in-progress changes
+3. **Key decisions** — technical choices made, architecture decisions, user preferences expressed
+4. **Important findings** — errors encountered, code patterns discovered, file locations with line numbers
+5. **Next steps** — what needs to be done next, pending tasks
+
+Format as structured markdown. Be concise but include specific file paths, function names, and technical details that would be needed to continue the work. Do NOT include conversational filler — only factual technical content.`;
+
+/**
+ * Estimate token count from text length.
+ * ~4 chars/token for English, ~2 chars/token for CJK.
+ */
+function estimateTokens(text: string): number {
+  let count = 0;
+  for (const char of text) {
+    if (/[一-鿿鿿぀-ゟ゠-ヿ]/.test(char)) {
+      count += 0.5;
+    } else {
+      count += 0.25;
+    }
+  }
+  return Math.ceil(count);
 }
 
-export function compactMessages(
-  messages: ChatMessage[],
-  tokenizer: Tokenizer,
-  options: Partial<CompactionOptions> = {},
-): CompactionResult {
-  const opts = { ...defaultOptions, ...options };
-  const originalTokens = messages.reduce((sum, msg) => sum + countMessageTokens(msg, tokenizer), 0);
+function estimateMessageTokens(message: ChatMessage): number {
+  let count = 0;
+  if (message.content) {
+    count += estimateTokens(message.content);
+  }
+  if (message.tool_calls) {
+    for (const tc of message.tool_calls) {
+      count += estimateTokens(tc.name);
+      count += estimateTokens(JSON.stringify(tc.arguments));
+    }
+  }
+  return count + 4; // message overhead
+}
 
+export function estimateConversationTokens(messages: ChatMessage[]): number {
+  return messages.reduce((sum, msg) => sum + estimateMessageTokens(msg), 0);
+}
+
+export function shouldCompact(messages: ChatMessage[], maxTokens: number): boolean {
+  return estimateConversationTokens(messages) > maxTokens;
+}
+
+/**
+ * Compact conversation by using the LLM to summarize old messages.
+ * Keeps system prompt + recent N messages, summarizes the rest.
+ * If llmClient is not provided, falls back to rule-based summary.
+ */
+export async function compactMessages(
+  messages: ChatMessage[],
+  llmClient?: LLMClient | null,
+  options: Partial<CompactionOptions> = {},
+): Promise<CompactionResult> {
+  const opts = { ...DEFAULT_OPTIONS, ...options };
+  const originalTokens = estimateConversationTokens(messages);
+
+  // Not enough messages to compact
   if (messages.length <= opts.keepRecentCount + 1) {
     return {
       messages,
       originalTokens,
       compactedTokens: originalTokens,
       removedCount: 0,
-      summaryMessage: { role: 'user', content: '' },
+      summaryContent: '',
     };
   }
 
+  // Split: system messages vs conversation
   const systemMessages: ChatMessage[] = [];
   const otherMessages: ChatMessage[] = [];
 
@@ -57,100 +106,80 @@ export function compactMessages(
     }
   }
 
-  // Keep the most recent messages
-  const recentCount = Math.min(opts.keepRecentCount, otherMessages.length);
-  const recentMessages = otherMessages.slice(-recentCount);
-  const oldMessages = otherMessages.slice(0, -recentCount);
+  // Keep recent messages, summarize the rest
+  const recentMessages = otherMessages.slice(-opts.keepRecentCount);
+  const oldMessages = otherMessages.slice(0, -opts.keepRecentCount);
 
-  // Build summary of old messages
-  const summaryParts: string[] = [];
-  let userTurns = 0;
-  let assistantTurns = 0;
-  let toolCalls = 0;
-  const topics: string[] = [];
+  if (oldMessages.length === 0) {
+    return {
+      messages,
+      originalTokens,
+      compactedTokens: originalTokens,
+      removedCount: 0,
+      summaryContent: '',
+    };
+  }
 
-  for (const msg of oldMessages) {
-    if (msg.role === 'user') {
-      userTurns++;
-      if (msg.content && msg.content.length < 200) {
-        topics.push(msg.content.slice(0, 80));
+  // Build conversation text for summarization
+  const conversationText = oldMessages
+    .map((msg) => {
+      const role = msg.role === 'user' ? 'User' : msg.role === 'assistant' ? 'Assistant' : 'Tool';
+      let text = `[${role}]`;
+      if (msg.content) {
+        text += ` ${msg.content.slice(0, 500)}`;
       }
-    } else if (msg.role === 'assistant') {
-      assistantTurns++;
       if (msg.tool_calls) {
-        toolCalls += msg.tool_calls.length;
+        text += ` [Called: ${msg.tool_calls.map((tc) => tc.name).join(', ')}]`;
       }
+      return text;
+    })
+    .join('\n');
+
+  // Use LLM to generate summary (or fallback if no client)
+  let summaryContent = '';
+  if (llmClient) {
+    try {
+      const summaryMessages: ChatMessage[] = [
+        { role: 'system', content: SUMMARIZER_PROMPT },
+        { role: 'user', content: `Please summarize this conversation:\n\n${conversationText}` },
+      ];
+      const response = await llmClient.chat(summaryMessages);
+      summaryContent = response.content || 'Previous conversation context was compacted.';
+    } catch {
+      llmClient = null; // Fall through to simple summary
     }
   }
-
-  summaryParts.push(`${opts.summaryPrefix} ${userTurns} user messages and ${assistantTurns} assistant responses were summarized to save context space.`);
-
-  if (toolCalls > 0) {
-    summaryParts.push(`${toolCalls} tool calls were executed during this section.`);
+  if (!summaryContent) {
+    // Fallback to simple summary if LLM fails or not available
+    const userTurns = oldMessages.filter((m) => m.role === 'user').length;
+    const assistantTurns = oldMessages.filter((m) => m.role === 'assistant').length;
+    const toolCalls = oldMessages.reduce((sum, m) => sum + (m.tool_calls?.length || 0), 0);
+    const topics = oldMessages
+      .filter((m) => m.role === 'user' && m.content && m.content.length < 200)
+      .map((m) => m.content!.slice(0, 80))
+      .slice(0, 5);
+    summaryContent = `Conversation history compacted: ${userTurns} user messages, ${assistantTurns} assistant responses, ${toolCalls} tool calls.\nTopics: ${topics.join('; ')}`;
   }
 
-  if (topics.length > 0) {
-    summaryParts.push(`Topics discussed: ${topics.slice(0, 5).join('; ')}`);
-  }
-
-  // Extract key information from tool results
-  const keyFindings: string[] = [];
-  for (const msg of oldMessages) {
-    if (msg.role === 'tool' && msg.content) {
-      try {
-        const result = JSON.parse(msg.content);
-        if (result.isError && result.output) {
-          keyFindings.push(`Error: ${result.output.slice(0, 100)}`);
-        }
-      } catch {
-        // Not JSON, skip
-      }
-    }
-  }
-
-  if (keyFindings.length > 0) {
-    summaryParts.push(`Key findings: ${keyFindings.slice(0, 3).join('; ')}`);
-  }
-
-  const summaryContent = summaryParts.join('\n');
   const summaryMessage: ChatMessage = {
     role: 'user',
     content: `[Context Summary]\n${summaryContent}`,
   };
 
-  // Rebuild message list
   const compactedMessages: ChatMessage[] = [
     ...systemMessages,
     summaryMessage,
-    { role: 'assistant', content: 'I understand. I have the context summary and will continue from here. What would you like me to do?' },
+    { role: 'assistant', content: 'I understand the context summary. I will continue from here.' },
     ...recentMessages,
   ];
 
-  const compactedTokens = compactedMessages.reduce((sum, msg) => sum + countMessageTokens(msg, tokenizer), 0);
+  const compactedTokens = estimateConversationTokens(compactedMessages);
 
   return {
     messages: compactedMessages,
     originalTokens,
     compactedTokens,
     removedCount: oldMessages.length,
-    summaryMessage,
+    summaryContent,
   };
-}
-
-function countMessageTokens(message: ChatMessage, tokenizer: Tokenizer): number {
-  let count = 0;
-  if (message.content) {
-    count += tokenizer.countTokens(message.content);
-  }
-  if (message.tool_calls) {
-    for (const tc of message.tool_calls) {
-      count += tokenizer.countTokens(tc.name);
-      count += tokenizer.countTokens(JSON.stringify(tc.arguments));
-    }
-  }
-  return count + 4; // Message overhead
-}
-
-export function estimateConversationTokens(messages: ChatMessage[], tokenizer: Tokenizer): number {
-  return messages.reduce((sum, msg) => sum + countMessageTokens(msg, tokenizer), 0);
 }

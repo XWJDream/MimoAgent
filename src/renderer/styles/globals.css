@@ -718,37 +718,6 @@ button { color: inherit; }
   line-height: 1.4;
 }
 
-/* Recent projects */
-.recent-projects {
-  display: flex;
-  gap: 10px;
-  max-width: 720px;
-  width: 100%;
-  margin-top: 32px;
-  flex-wrap: wrap;
-}
-
-.recent-project-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  border-radius: 10px;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 150ms, border-color 150ms;
-  min-width: 160px;
-}
-
-.recent-project-card:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-hover);
-  color: var(--text-primary);
-}
-
 /* ===== Tool Card ===== */
 .tool-card {
   overflow: hidden;

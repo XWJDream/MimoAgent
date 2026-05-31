@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
+import type { AgentHooks } from '../core/agent-loop.js';
 
 export interface UsageRecord {
   timestamp: number;
@@ -209,4 +210,26 @@ export class UsageTracker {
     lines.push('');
     return lines.join('\n');
   }
+}
+
+/**
+ * Creates hooks that log tool execution times and result status.
+ */
+export function createUsageHooks(): AgentHooks {
+  const startTimes = new Map<string, number>();
+
+  return {
+    async beforeTool(name: string) {
+      startTimes.set(name, Date.now());
+    },
+    async afterTool(name: string, result) {
+      const startTime = startTimes.get(name);
+      if (startTime !== undefined) {
+        const duration = Date.now() - startTime;
+        const status = result.isError ? 'error' : 'ok';
+        console.log(`[UsageHooks] Tool "${name}" completed in ${duration}ms (${status})`);
+        startTimes.delete(name);
+      }
+    },
+  };
 }

@@ -9,6 +9,11 @@ const permissionLabels: Record<string, string> = {
   'full-auto': '全自动',
 };
 
+const toolPresetLabels: Record<string, string> = {
+  plan: '分析模式',
+  act: '操作模式',
+};
+
 export function StatusBar() {
   const { usage, messages, isThinking, isStreaming, toolCalls } = useChatStore();
   const { config, apiStatus, apiError, validateApi } = useConfigStore();
@@ -64,6 +69,9 @@ export function StatusBar() {
       </div>
       <div className="flex items-center gap-3">
         <span>{permissionLabels[config.permissionMode] || config.permissionMode}</span>
+        {config.toolPreset && config.toolPreset !== 'act' && (
+          <span style={{ color: 'var(--warning)' }}>{toolPresetLabels[config.toolPreset] || config.toolPreset}</span>
+        )}
         <span>{config.model}</span>
       </div>
     </div>

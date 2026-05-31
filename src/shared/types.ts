@@ -51,6 +51,7 @@ export interface AppConfig {
   apiBase: string;
   apiKey: string;
   permissionMode: 'suggest' | 'auto-edit' | 'full-auto';
+  toolPreset: 'plan' | 'act';
   maxTurns: number;
   temperature: number;
   theme: 'dark' | 'light';

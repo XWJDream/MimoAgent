@@ -4,11 +4,12 @@ import { LLMClient } from '../llm/client.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { registerBuiltinTools } from '../tools/builtin/index.js';
 import { PermissionChecker } from '../permissions/checker.js';
-import { agentLoop, type LoopEvent, type AgentLoopOptions } from './agent-loop.js';
+import { agentLoop, type LoopEvent, type AgentLoopOptions, type AgentHooks } from './agent-loop.js';
 import { buildSystemPrompt } from '../context/system-prompt.js';
 import { ProjectMemory } from '../context/memory.js';
 import { FileCache } from '../context/file-cache.js';
 import { UsageTracker } from '../context/usage-tracker.js';
+import { shouldCompact, compactMessages, estimateConversationTokens } from '../context/compaction.js';
 import type { ChatCompletionTool } from 'openai/resources/chat/completions';
 
 export class Agent {
@@ -21,6 +22,7 @@ export class Agent {
   private fileCache: FileCache;
   private usageTracker: UsageTracker;
   private workspace: string;
+  private hooks: AgentHooks | undefined;
   private initialized = false;
 
   constructor(config: MimoConfig, workspace?: string) {
@@ -47,12 +49,12 @@ export class Agent {
     await Promise.all([this.memory.load(), this.usageTracker.load()]);
 
     // Register built-in tools
-    registerBuiltinTools(this.toolRegistry);
+    registerBuiltinTools(this.toolRegistry, this.config.toolPreset || 'act');
     this.toolRegistry.setContext({
       workingDirectory: this.workspace,
       fileCache: this.fileCache,
     });
-    this.permissionChecker = new PermissionChecker(this.config.permissionMode);
+    this.permissionChecker = new PermissionChecker(this.config.permissionMode, this.config.pathPermissionRules);
 
     // Build system prompt
     const systemPrompt = buildSystemPrompt(this.config, this.memory.getContent(), this.workspace);
@@ -79,6 +81,22 @@ export class Agent {
 
     // Add user message
     this.conversation.push({ role: 'user', content: prompt });
+
+    // Check if context compaction is needed
+    const maxTokens = this.config.contextWindow || 80000;
+    if (shouldCompact(this.conversation, maxTokens)) {
+      console.log(`[Agent] Context compaction triggered (${estimateConversationTokens(this.conversation)} tokens > ${maxTokens})`);
+      try {
+        const result = await compactMessages(this.conversation, this.llmClient, { maxTokens });
+        if (result.removedCount > 0) {
+          this.conversation = result.messages;
+          console.log(`[Agent] Compacted: ${result.removedCount} messages removed, ${result.originalTokens} -> ${result.compactedTokens} tokens`);
+        }
+      } catch (err) {
+        console.error('[Agent] Compaction failed, continuing without:', err);
+      }
+    }
+
     this.toolRegistry.setContext({
       workingDirectory: this.workspace,
       fileCache: this.fileCache,
@@ -102,6 +120,7 @@ export class Agent {
       this.permissionChecker,
       {
         ...loopOptions,
+        hooks: this.hooks,
         onUsage: (promptTokens: number, completionTokens: number) => {
           this.usageTracker.recordUsage(this.config.model, promptTokens, completionTokens);
         },
@@ -144,5 +163,9 @@ export class Agent {
 
   getMemory(): ProjectMemory {
     return this.memory;
+  }
+
+  setHooks(hooks: AgentHooks): void {
+    this.hooks = hooks;
   }
 }

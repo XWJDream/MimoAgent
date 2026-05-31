@@ -14,6 +14,15 @@ export interface SubAgentConfig {
   maxConcurrent: number;
 }
 
+export type ToolPreset = 'plan' | 'act';
+
+export interface PathPermissionRule {
+  pattern: string;
+  tools: string[];
+  action: 'allow' | 'deny' | 'confirm';
+  description?: string;
+}
+
 export interface MimoConfig {
   model: string;
   apiBase: string;
@@ -22,6 +31,8 @@ export interface MimoConfig {
   temperature: number;
   contextWindow: number;
   permissionMode: PermissionMode;
+  toolPreset?: ToolPreset;
+  pathPermissionRules?: PathPermissionRule[];
   allowedTools: string[];
   blockedTools: string[];
   allowedPaths: string[];

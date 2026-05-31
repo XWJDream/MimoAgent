@@ -6,6 +6,11 @@ import type { ToolRegistry } from '../tools/registry.js';
 import type { PermissionChecker } from '../permissions/checker.js';
 import type { ToolResult } from '../tools/base.js';
 
+export interface AgentHooks {
+  beforeTool?: (name: string, args: Record<string, unknown>) => Promise<{ skip?: boolean; modifiedArgs?: Record<string, unknown> } | void>;
+  afterTool?: (name: string, result: ToolResult) => Promise<{ modifiedResult?: ToolResult } | void>;
+}
+
 export type LoopEvent =
   | { type: 'text'; content: string }
   | { type: 'tool_start'; name: string; args: Record<string, unknown> }
@@ -21,6 +26,7 @@ export interface AgentLoopOptions {
   onToolStart?: (name: string, args: Record<string, unknown>) => void;
   onToolResult?: (name: string, result: ToolResult) => void;
   onUsage?: (promptTokens: number, completionTokens: number) => void;
+  hooks?: AgentHooks;
 }
 
 export async function* agentLoop(
@@ -31,9 +37,11 @@ export async function* agentLoop(
   permissionChecker: PermissionChecker | null,
   options: AgentLoopOptions,
 ): AsyncGenerator<LoopEvent> {
+  const MAX_TURNS = Math.min(options.maxTurns, 100); // Safety cap at 100
   let turnCount = 0;
+  const recentToolCalls: string[] = []; // For loop detection
 
-  while (turnCount < options.maxTurns) {
+  while (turnCount < MAX_TURNS) {
     if (options.abortSignal?.aborted) {
       yield { type: 'error', message: 'Agent run stopped' };
       return;
@@ -93,6 +101,16 @@ export async function* agentLoop(
       return;
     }
 
+    // Loop detection: check if the model is repeating the same tool calls
+    const toolCallSig = toolCalls.map((tc) => `${tc.name}:${JSON.stringify(tc.arguments)}`).join('|');
+    recentToolCalls.push(toolCallSig);
+    if (recentToolCalls.length > 6) recentToolCalls.shift();
+    const repeatCount = recentToolCalls.filter((s) => s === toolCallSig).length;
+    if (repeatCount >= 3) {
+      yield { type: 'error', message: 'Agent loop detected: repeated identical tool calls. Stopping.' };
+      return;
+    }
+
     messages.push({
       role: 'assistant',
       content: content || null,
@@ -131,7 +149,36 @@ export async function* agentLoop(
       }
 
       options.onToolStart?.(toolCall.name, toolCall.arguments);
-      const result = await toolRegistry.execute(toolCall.name, toolCall.arguments);
+
+      // beforeTool hook: may skip execution or modify arguments
+      let effectiveArgs = toolCall.arguments;
+      if (options.hooks?.beforeTool) {
+        const hookResult = await options.hooks.beforeTool(toolCall.name, toolCall.arguments);
+        if (hookResult?.skip) {
+          const skippedResult: ToolResult = { output: `Tool "${toolCall.name}" skipped by hook`, isError: false };
+          messages.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: JSON.stringify(skippedResult),
+          });
+          yield { type: 'tool_result', name: toolCall.name, result: skippedResult };
+          continue;
+        }
+        if (hookResult?.modifiedArgs) {
+          effectiveArgs = hookResult.modifiedArgs;
+        }
+      }
+
+      let result = await toolRegistry.execute(toolCall.name, effectiveArgs);
+
+      // afterTool hook: may modify the result
+      if (options.hooks?.afterTool) {
+        const hookResult = await options.hooks.afterTool(toolCall.name, result);
+        if (hookResult?.modifiedResult) {
+          result = hookResult.modifiedResult;
+        }
+      }
+
       options.onToolResult?.(toolCall.name, result);
 
       messages.push({

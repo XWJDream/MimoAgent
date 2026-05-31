@@ -18,6 +18,7 @@ const configKeys = new Set<keyof AppConfig>([
   'apiBase',
   'apiKey',
   'permissionMode',
+  'toolPreset',
   'maxTurns',
   'temperature',
   'theme',
@@ -53,6 +54,9 @@ function validateConfigValue(key: keyof AppConfig, value: unknown): AppConfig[ke
       return value;
     case 'permissionMode':
       if (value !== 'suggest' && value !== 'auto-edit' && value !== 'full-auto') throw new Error('permissionMode is invalid');
+      return value;
+    case 'toolPreset':
+      if (value !== 'plan' && value !== 'act') throw new Error('toolPreset must be plan or act');
       return value;
     case 'maxTurns':
       if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 200) {
@@ -192,6 +196,7 @@ const defaultConfig: AppConfig = {
   apiBase: process.env.MIMO_API_BASE || 'https://api.xiaomimimo.com/v1',
   apiKey: process.env.MIMO_API_KEY || '',
   permissionMode: 'suggest',
+  toolPreset: 'act',
   maxTurns: 50,
   temperature: 0.2,
   theme: 'dark',
@@ -274,7 +279,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (!isConfigKey(key)) throw new Error(`Unknown config key: ${key}`);
     (currentConfig as unknown as Record<string, unknown>)[key] = validateConfigValue(key, value);
 
-    if (['apiKey', 'apiBase', 'model', 'permissionMode', 'maxTurns', 'temperature', 'sandboxEnabled'].includes(key)) {
+    if (['apiKey', 'apiBase', 'model', 'permissionMode', 'toolPreset', 'maxTurns', 'temperature', 'sandboxEnabled'].includes(key)) {
       debouncedInit();
     }
 

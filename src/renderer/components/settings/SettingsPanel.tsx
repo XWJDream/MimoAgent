@@ -90,6 +90,28 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             <PermissionMode />
           </div>
           <div>
+            <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>工具模式</label>
+            <div className="flex gap-2">
+              {([['plan', '分析模式', '仅可读取和搜索，适合代码分析'], ['act', '操作模式', '完整工具集，可读写和执行']] as const).map(([value, label, desc]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setConfig({ toolPreset: value })}
+                  className="flex flex-col items-start gap-0.5 px-3 py-2 rounded-lg text-[13px] transition-colors duration-150"
+                  style={{
+                    flex: 1,
+                    background: config.toolPreset === value ? 'var(--accent)' : 'var(--bg-base)',
+                    color: config.toolPreset === value ? '#fff' : 'var(--text-secondary)',
+                    border: `1px solid ${config.toolPreset === value ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                  }}
+                >
+                  <span>{label}</span>
+                  <span className="text-[10px] opacity-70">{desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
             <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
               温度 ({config.temperature})
             </label>
