@@ -18,6 +18,26 @@
 
 > 首次启动需要在 **设置** 中配置 API Key。前往 [小米 MiMo 开放平台](https://ai.mi.com) 获取。
 
+### ⚠️ Windows SmartScreen 提示
+
+下载 exe 后可能弹出 **"Windows 已保护你的电脑"**，这是 SmartScreen 对新程序的正常拦截，并非病毒。处理方式：
+
+1. 右键 exe → **属性** → 勾选 **"解除锁定"** → 确定 → 运行
+2. 或点击 **"更多信息"** → **"仍要运行"**
+
+> 本项目完全开源，代码可审计。如有安全顾虑可自行克隆源码构建。
+
+### API 端点说明
+
+MiMo 提供两种 API 端点，根据你的计费方式选择：
+
+| 端点 | 说明 |
+|------|------|
+| `https://api.xiaomimimo.com/v1` | 标准 API（推荐） |
+| `https://token-plan-cn.xiaomimimo.com/v1` | Token 计划专用 |
+
+在 **设置 → API 地址** 中修改，默认为 `api.xiaomimimo.com`。
+
 ---
 
 ## 功能特性
@@ -108,7 +128,7 @@ MimoAgent/
 | 变量 | 说明 |
 |------|------|
 | `MIMO_API_KEY` | API 密钥 |
-| `MIMO_API_BASE` | API 地址，默认 `https://token-plan-cn.xiaomimimo.com/v1` |
+| `MIMO_API_BASE` | API 地址，默认 `https://api.xiaomimimo.com/v1` |
 | `MIMO_MODEL` | 默认模型，如 `mimo-v2.5-pro` |
 | `MIMO_PERMISSION_MODE` | 权限模式：`suggest` / `auto-edit` / `full-auto` |
 | `MIMO_MAX_TURNS` | 最大对话轮次 |

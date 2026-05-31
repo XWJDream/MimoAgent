@@ -18,7 +18,7 @@ const SubAgentConfigSchema = z.object({
 
 export const ConfigSchema = z.object({
   model: z.string().default('mimo-v2.5-pro'),
-  apiBase: z.string().url().default('https://api.mimo.ai/v1'),
+  apiBase: z.string().url().default('https://api.xiaomimimo.com/v1'),
   apiKey: z.string().default(''),
   maxTokens: z.number().default(4096),
   temperature: z.number().min(0).max(2).default(0.2),

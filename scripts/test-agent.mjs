@@ -11,7 +11,7 @@ console.log('Agent loaded:', typeof Agent);
 // Test creating agent instance
 const agent = new Agent({
   model: 'mimo-v2.5-pro',
-  apiBase: 'https://token-plan-cn.xiaomimimo.com/v1',
+  apiBase: 'https://api.xiaomimimo.com/v1',
   apiKey: process.env.MIMO_API_KEY || '',
   maxTokens: 4096,
   temperature: 0.2,

@@ -3,7 +3,7 @@ import type { MimoConfig } from './types.js';
 export function getDefaultConfig(): MimoConfig {
   return {
     model: 'mimo-v2.5-pro',
-    apiBase: 'https://api.mimo.ai/v1',
+    apiBase: 'https://api.xiaomimimo.com/v1',
     apiKey: process.env.MIMO_API_KEY || '',
     maxTokens: 4096,
     temperature: 0.2,

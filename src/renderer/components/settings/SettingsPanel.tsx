@@ -57,7 +57,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             <input type="text" value={apiBase} onChange={(e) => setApiBase(e.target.value)}
               className="w-full rounded-lg px-3 py-2 text-[13px] focus:outline-none transition-colors duration-150"
               style={{ background: 'var(--bg-base)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}
-              placeholder="https://api.mimo.ai/v1" />
+              placeholder="https://api.xiaomimimo.com/v1" />
           </div>
           <div>
             <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>API 密钥</label>

@@ -189,7 +189,7 @@ function getDefaultWorkspace(): string {
 
 const defaultConfig: AppConfig = {
   model: 'mimo-v2.5-pro',
-  apiBase: process.env.MIMO_API_BASE || 'https://token-plan-cn.xiaomimimo.com/v1',
+  apiBase: process.env.MIMO_API_BASE || 'https://api.xiaomimimo.com/v1',
   apiKey: process.env.MIMO_API_KEY || '',
   permissionMode: 'suggest',
   maxTurns: 50,

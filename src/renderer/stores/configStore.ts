@@ -10,7 +10,7 @@ interface ConfigState {
 export const useConfigStore = create<ConfigState>((set) => ({
   config: {
     model: 'mimo-v2.5-pro',
-    apiBase: 'https://token-plan-cn.xiaomimimo.com/v1',
+    apiBase: 'https://api.xiaomimimo.com/v1',
     apiKeyConfigured: false,
     apiKeyPreview: null,
     permissionMode: 'suggest',
