@@ -1,13 +1,18 @@
 import { create } from 'zustand';
 import type { AppConfig, PublicAppConfig } from '@shared/types';
 
+type ApiStatus = 'unknown' | 'checking' | 'valid' | 'invalid';
+
 interface ConfigState {
   config: PublicAppConfig;
+  apiStatus: ApiStatus;
+  apiError: string | null;
   setConfig: (config: Partial<AppConfig>) => void;
   loadConfig: () => Promise<void>;
+  validateApi: () => Promise<void>;
 }
 
-export const useConfigStore = create<ConfigState>((set) => ({
+export const useConfigStore = create<ConfigState>((set, get) => ({
   config: {
     model: 'mimo-v2.5-pro',
     apiBase: 'https://api.xiaomimimo.com/v1',
@@ -20,6 +25,8 @@ export const useConfigStore = create<ConfigState>((set) => ({
     selectedAvatarId: 'default',
     sandboxEnabled: false,
   },
+  apiStatus: 'unknown',
+  apiError: null,
   setConfig: (partial) => {
     const { apiKey, ...publicPartial } = partial;
     set((state) => ({
@@ -33,10 +40,11 @@ export const useConfigStore = create<ConfigState>((set) => ({
             }
           : {}),
       },
+      // Reset validation when key or base changes
+      ...(typeof apiKey === 'string' || partial.apiBase ? { apiStatus: 'unknown' as ApiStatus, apiError: null } : {}),
     }));
     if (window.api?.config) {
       const entries = Object.entries(partial);
-      // Send all config updates, then trigger a single reinitialize via the last one
       Promise.all(entries.map(([key, value]) =>
         window.api.config.set(key, value).catch((error: Error) => {
           console.error(`Failed to save config ${key}:`, error);
@@ -48,6 +56,25 @@ export const useConfigStore = create<ConfigState>((set) => ({
     const remoteConfig = await window.api?.config?.get();
     if (remoteConfig) {
       set({ config: remoteConfig });
+    }
+  },
+  validateApi: async () => {
+    const { config } = get();
+    if (!config.apiKeyConfigured) {
+      set({ apiStatus: 'invalid', apiError: '未配置 API Key' });
+      return;
+    }
+    set({ apiStatus: 'checking', apiError: null });
+    try {
+      const res = await window.api?.api?.validate();
+      if (res?.valid) {
+        set({ apiStatus: 'valid', apiError: null });
+      } else {
+        set({ apiStatus: 'invalid', apiError: res?.error || '验证失败' });
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      set({ apiStatus: 'invalid', apiError: msg });
     }
   },
 }));

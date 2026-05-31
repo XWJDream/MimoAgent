@@ -10,25 +10,31 @@ interface ToolPanelProps {
 
 export function ToolPanel({ forceOpen }: ToolPanelProps) {
   const { toolCalls, usage, messages, isThinking, isStreaming } = useChatStore();
-  const { config } = useConfigStore();
+  const { config, apiStatus } = useConfigStore();
   const runningTools = toolCalls.filter((t) => t.status === 'running').length;
 
   const hasRunningTool = toolCalls.some((t) => t.status === 'running');
   const agentStatus = !config.apiKeyConfigured
     ? '未配置'
-    : hasRunningTool
-      ? '执行中'
-      : isThinking
-        ? '思考中'
-        : isStreaming
-          ? '输出中'
-          : '就绪';
+    : apiStatus === 'checking'
+      ? '验证中'
+      : apiStatus === 'invalid'
+        ? 'API 异常'
+        : hasRunningTool
+          ? '执行中'
+          : isThinking
+            ? '思考中'
+            : isStreaming
+              ? '输出中'
+              : '就绪';
 
   const agentStatusColor = !config.apiKeyConfigured
     ? 'var(--warning)'
-    : hasRunningTool || isThinking || isStreaming
-      ? 'var(--accent)'
-      : 'var(--success)';
+    : apiStatus === 'invalid'
+      ? 'var(--error)'
+      : hasRunningTool || isThinking || isStreaming
+        ? 'var(--accent)'
+        : 'var(--success)';
 
   return (
     <aside

@@ -61,4 +61,6 @@ export const IPC = {
 
   TTS_GENERATE: 'tts:generate',
   TTS_SAVE: 'tts:save',
+
+  API_VALIDATE: 'api:validate',
 } as const;

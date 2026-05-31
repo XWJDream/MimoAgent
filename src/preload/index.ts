@@ -63,6 +63,8 @@ const IPC = {
 
   TTS_GENERATE: 'tts:generate',
   TTS_SAVE: 'tts:save',
+
+  API_VALIDATE: 'api:validate',
 } as const;
 
 const api = {
@@ -192,6 +194,11 @@ const api = {
   tts: {
     generate: (params: { text: string; model: string; voice?: string; speed?: number; thinkingIntensity?: string }) => ipcRenderer.invoke(IPC.TTS_GENERATE, params),
     save: (audioId: string) => ipcRenderer.invoke(IPC.TTS_SAVE, audioId),
+  },
+
+  // API
+  api: {
+    validate: () => ipcRenderer.invoke(IPC.API_VALIDATE),
   },
 };
 

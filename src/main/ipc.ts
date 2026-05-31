@@ -262,6 +262,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     IPC.GIT_INFO,
     IPC.TTS_GENERATE,
     IPC.TTS_SAVE,
+    IPC.API_VALIDATE,
   ].forEach((channel) => ipcMain.removeHandler(channel));
 
   [IPC.WINDOW_MINIMIZE, IPC.WINDOW_MAXIMIZE, IPC.WINDOW_CLOSE, IPC.AGENT_STOP].forEach((channel) => {
@@ -706,5 +707,29 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (!filePath) return { success: false, error: '已取消' };
     writeFileSync(filePath, buf);
     return { success: true, filePath };
+  });
+
+  // === API Key Validation ===
+  ipcMain.handle(IPC.API_VALIDATE, async () => {
+    const { apiKey, apiBase } = currentConfig;
+    if (!apiKey) return { valid: false, error: '未配置 API Key' };
+    try {
+      const chatBase = apiBase.replace(/\/v1\/?$/, '') + '/v1';
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(`${chatBase}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({ model: currentConfig.model || 'mimo-v2.5-pro', messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (res.ok) return { valid: true };
+      const body = await res.text().catch(() => '');
+      return { valid: false, error: `HTTP ${res.status}: ${body.slice(0, 120)}` };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { valid: false, error: msg };
+    }
   });
 }

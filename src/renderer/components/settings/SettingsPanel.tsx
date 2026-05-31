@@ -10,7 +10,7 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
-  const { config, setConfig } = useConfigStore();
+  const { config, setConfig, validateApi } = useConfigStore();
   const [apiKey, setApiKey] = useState('');
   const [apiBase, setApiBase] = useState(config.apiBase);
 
@@ -23,6 +23,8 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     });
     setApiKey('');
     onClose();
+    // Re-validate after saving
+    setTimeout(() => validateApi(), 300);
   };
 
   const handleClearApiKey = () => {
