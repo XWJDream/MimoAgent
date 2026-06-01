@@ -10,18 +10,14 @@ jobs:
   build:
     runs-on: windows-latest
 
-    strategy:
-      matrix:
-        node-version: [20]
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 20
           cache: 'npm'
 
       - name: Install dependencies
@@ -33,6 +29,7 @@ jobs:
         run: npm run build
 
       - name: Verify no secrets in build
+        shell: bash
         run: |
           echo "Checking for API keys..."
           if grep -r "sk-[a-zA-Z0-9]" dist/ engine/dist/ 2>/dev/null; then
