@@ -32,7 +32,7 @@ interface ChatState {
   appendToken: (token: string) => void;
   addToolCall: (tool: Pick<ToolCallInfo, 'name' | 'args'>) => void;
   finishToolCall: (result: Pick<ToolCallInfo, 'name' | 'output'> & { isError: boolean }) => void;
-  finishResponse: (usage: { tokens: number; cost: number; cachedTokens?: number }) => void;
+  finishResponse: (usage: { tokens: number; cost: number; cachedTokens?: number; promptTokens?: number; completionTokens?: number }) => void;
   failResponse: (error: string) => void;
   clearMessages: () => void;
   editAndResend: (messageId: string, newContent: string) => string | null;
@@ -181,6 +181,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         totalTokens: prevUsage.totalTokens + usage.tokens,
         totalCost: prevUsage.totalCost + usage.cost,
         sessionCachedTokens: (prevUsage.sessionCachedTokens ?? 0) + (usage.cachedTokens ?? 0),
+        sessionPromptTokens: (prevUsage.sessionPromptTokens ?? 0) + (usage.promptTokens ?? 0),
+        sessionCompletionTokens: (prevUsage.sessionCompletionTokens ?? 0) + (usage.completionTokens ?? 0),
       },
     });
     debouncedSave(activeSessionId, updatedMessages);
