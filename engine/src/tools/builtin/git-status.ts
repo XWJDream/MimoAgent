@@ -1,6 +1,9 @@
-import { execSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { BaseTool, type ToolResult, type ToolContext } from '../base.js';
 import type { ToolDefinition } from '../schema.js';
+
+const execFileAsync = promisify(execFile);
 
 export class GitStatusTool extends BaseTool {
   readonly name = 'git_status';
@@ -25,7 +28,7 @@ export class GitStatusTool extends BaseTool {
     const workspace = context.workingDirectory;
 
     try {
-      const output = execSync('git status --porcelain -b', {
+      const { stdout: output } = await execFileAsync('git', ['status', '--porcelain', '-b'], {
         cwd: workspace,
         encoding: 'utf-8',
         timeout: 10000,

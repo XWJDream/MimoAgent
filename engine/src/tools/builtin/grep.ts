@@ -1,9 +1,9 @@
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { BaseTool, type ToolResult, type ToolContext } from '../base.js';
 import type { ToolDefinition } from '../schema.js';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export class GrepTool extends BaseTool {
   readonly name = 'grep';
@@ -46,11 +46,12 @@ export class GrepTool extends BaseTool {
     // Limit output to prevent overwhelming
     flags.push('--max-count', '100');
 
-    const cmd = `rg ${flags.map((f) => `'${f}'`).join(' ')} '${pattern.replace(/'/g, "'\\''")}' '${searchPath}'`;
+    const rgArgs = [...flags, pattern, searchPath];
 
     try {
-      const { stdout, stderr } = await execAsync(cmd, {
+      const { stdout, stderr } = await execFileAsync('rg', rgArgs, {
         cwd: context.workingDirectory,
+        encoding: 'utf-8',
         timeout: 10000,
         maxBuffer: 1024 * 1024,
       });

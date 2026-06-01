@@ -1,6 +1,9 @@
-import { execSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { BaseTool, type ToolResult, type ToolContext } from '../base.js';
 import type { ToolDefinition } from '../schema.js';
+
+const execFileAsync = promisify(execFile);
 
 export class GitCheckpointTool extends BaseTool {
   readonly name = 'git_checkpoint';
@@ -27,25 +30,26 @@ export class GitCheckpointTool extends BaseTool {
     const { label } = args as { label: string };
     try {
       // Check if it's a git repo
-      execSync('git rev-parse --is-inside-work-tree', { cwd: context.workingDirectory, stdio: 'pipe' });
+      await execFileAsync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: context.workingDirectory });
 
       // Create stash with message
       const message = `mimo-checkpoint: ${label}`;
-      const result = execSync(`git stash push -m "${message}" --include-untracked`, {
+      const { stdout: stashResult } = await execFileAsync('git', ['stash', 'push', '-m', message, '--include-untracked'], {
         cwd: context.workingDirectory,
         encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }).trim();
+      });
+      const result = stashResult.trim();
 
       if (result.includes('No local changes')) {
         return { output: 'No changes to checkpoint (working tree clean)', isError: false };
       }
 
       // Get the stash hash
-      const hash = execSync('git rev-parse stash@{0}', {
+      const { stdout: hashOutput } = await execFileAsync('git', ['rev-parse', 'stash@{0}'], {
         cwd: context.workingDirectory,
         encoding: 'utf-8',
-      }).trim();
+      });
+      const hash = hashOutput.trim();
 
       return {
         output: `Checkpoint created: ${hash.slice(0, 8)} ("${label}")\nTo rollback: git stash pop`,

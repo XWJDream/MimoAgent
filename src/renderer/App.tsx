@@ -1,6 +1,7 @@
 import React from 'react';
 import { useEffect } from 'react';
 import { AppShell } from './components/layout/AppShell';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { useConfigStore } from './stores/configStore';
 import { useSessionStore } from './stores/sessionStore';
 
@@ -25,5 +26,9 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme || 'dark');
   }, [theme]);
 
-  return <AppShell />;
+  return (
+    <ErrorBoundary>
+      <AppShell />
+    </ErrorBoundary>
+  );
 }

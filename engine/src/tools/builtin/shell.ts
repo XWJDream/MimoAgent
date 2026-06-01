@@ -31,7 +31,12 @@ export class ShellTool extends BaseTool {
     }
 
     // Safety: block obviously destructive commands
-    const dangerous = ['rm -rf /', 'mkfs', 'dd if=', ':(){:|:&};:'];
+    const dangerous = [
+      'rm -rf /', 'rm -rf /*', 'mkfs', 'dd if=', ':(){:|:&};:',
+      'curl | sh', 'curl | bash', 'wget | sh', 'wget | bash',
+      'wget -O- | bash', 'chmod -R 777 /', '> /dev/sda',
+      'mv / ', 'rm -rf ~', 'rm -rf $HOME',
+    ];
     for (const pattern of dangerous) {
       if (command.includes(pattern)) {
         return { output: `Error: Blocked dangerous command: ${command}`, isError: true };

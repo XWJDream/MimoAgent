@@ -1,6 +1,9 @@
-import { execSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { BaseTool, type ToolResult, type ToolContext } from '../base.js';
 import type { ToolDefinition } from '../schema.js';
+
+const execFileAsync = promisify(execFile);
 
 export class GitCommitTool extends BaseTool {
   readonly name = 'git_commit';
@@ -39,23 +42,19 @@ export class GitCommitTool extends BaseTool {
     try {
       // Stage files
       if (files && Array.isArray(files) && files.length > 0) {
-        const escapedFiles = files.map((f) => `"${f}"`).join(' ');
-        execSync(`git add ${escapedFiles}`, {
+        await execFileAsync('git', ['add', ...files], {
           cwd: workspace,
-          encoding: 'utf-8',
           timeout: 10000,
         });
       } else {
-        execSync('git add -A', {
+        await execFileAsync('git', ['add', '-A'], {
           cwd: workspace,
-          encoding: 'utf-8',
           timeout: 10000,
         });
       }
 
       // Commit
-      const escapedMessage = message.replace(/"/g, '\\"');
-      const commitOutput = execSync(`git commit -m "${escapedMessage}"`, {
+      const { stdout: commitOutput } = await execFileAsync('git', ['commit', '-m', message], {
         cwd: workspace,
         encoding: 'utf-8',
         timeout: 10000,

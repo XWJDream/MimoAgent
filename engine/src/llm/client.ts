@@ -142,11 +142,19 @@ export class LLMClient {
 
   private parseToolCalls(toolCalls: OpenAI.ChatCompletionMessageToolCall[] | undefined): ToolCall[] | null {
     if (!toolCalls || toolCalls.length === 0) return null;
-    return toolCalls.map((tc) => ({
-      id: tc.id,
-      name: tc.function.name,
-      arguments: JSON.parse(tc.function.arguments),
-    }));
+    return toolCalls.map((tc) => {
+      let parsedArgs: Record<string, unknown> = {};
+      try {
+        parsedArgs = JSON.parse(tc.function.arguments);
+      } catch {
+        parsedArgs = {};
+      }
+      return {
+        id: tc.id,
+        name: tc.function.name,
+        arguments: parsedArgs,
+      };
+    });
   }
 
   private parseUsage(usage: OpenAI.CompletionUsage | undefined): TokenUsage {

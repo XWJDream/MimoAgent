@@ -1,6 +1,21 @@
 import { create } from 'zustand';
 import type { Message, ToolCallInfo, UsageStats } from '@shared/types';
 
+let tokenBuffer = '';
+let tokenFlushScheduled = false;
+let tokenFlushCallback: (() => void) | null = null;
+
+function scheduleTokenFlush() {
+  if (tokenFlushScheduled) return;
+  tokenFlushScheduled = true;
+  requestAnimationFrame(() => {
+    tokenFlushScheduled = false;
+    if (tokenBuffer) {
+      tokenFlushCallback?.();
+    }
+  });
+}
+
 interface ChatState {
   messages: Message[];
   isThinking: boolean;
@@ -70,7 +85,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  appendToken: (token) => set((state) => ({ currentResponse: state.currentResponse + token })),
+  appendToken: (token) => {
+    tokenBuffer += token;
+    tokenFlushCallback = () => {
+      set((state) => ({
+        currentResponse: state.currentResponse + tokenBuffer,
+      }));
+      tokenBuffer = '';
+    };
+    scheduleTokenFlush();
+  },
 
   addToolCall: (tool) =>
     set((state) => ({

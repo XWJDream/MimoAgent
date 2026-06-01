@@ -45,7 +45,7 @@ export class AgentService {
         const agentPath = join(appRoot, 'engine', 'dist', 'core', 'agent.js');
         const agentUrl = pathToFileURL(agentPath).href;
         console.log('[AgentService] Loading from:', agentUrl);
-        const agentModule = await eval(`import('${agentUrl}')`);
+        const agentModule = await import(agentUrl);
         AgentClass = agentModule.Agent;
         console.log('[AgentService] mimo-agent loaded successfully');
       } catch (err) {

@@ -396,7 +396,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       const appRoot = app.isPackaged ? app.getAppPath() : process.cwd();
       const compactionPath = join(appRoot, 'engine', 'dist', 'context', 'compaction.js');
       const compactionUrl = pathToFileURL(compactionPath).href;
-      const { compactMessages, shouldCompact } = await eval(`import('${compactionUrl}')`);
+      const { compactMessages, shouldCompact } = await import(compactionUrl);
       if (shouldCompact(conversation)) {
         const compacted = compactMessages(conversation);
         agent.setConversation(compacted);
