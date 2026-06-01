@@ -1,6 +1,7 @@
 {
   "name": "mimo-desktop",
   "version": "0.2.0",
+  "type": "module",
   "description": "MimoAgent Desktop - AI coding agent powered by mimo-v2.5-pro",
   "main": "dist/main/index.js",
   "scripts": {
