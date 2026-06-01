@@ -127,6 +127,22 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               style={{ background: 'var(--bg-base)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }} />
           </div>
           <div>
+            <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>沙盒模式</label>
+            <button
+              type="button"
+              onClick={() => setConfig({ sandboxEnabled: !config.sandboxEnabled })}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-[13px] transition-colors duration-150"
+              style={{
+                background: 'var(--bg-base)',
+                border: `1px solid ${config.sandboxEnabled ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                color: config.sandboxEnabled ? 'var(--accent)' : 'var(--text-secondary)',
+              }}
+            >
+              <span>{config.sandboxEnabled ? '已启用' : '已关闭'}</span>
+              <span className="text-[10px] opacity-70">需要 Docker，命令在隔离容器中执行</span>
+            </button>
+          </div>
+          <div>
             <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>主题</label>
             <div className="flex gap-2">
               {(['dark', 'light'] as const).map((theme) => (

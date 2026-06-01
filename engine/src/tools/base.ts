@@ -1,5 +1,6 @@
 import type { ToolDefinition } from './schema.js';
 import type { FileCache } from '../context/file-cache.js';
+import type { SandboxManager } from '../sandbox/manager.js';
 
 export interface ToolResult {
   output: string;
@@ -12,6 +13,7 @@ export interface ToolContext {
   workingDirectory: string;
   fileCache: FileCache;
   abortSignal?: AbortSignal;
+  sandboxManager?: SandboxManager;
 }
 
 export type RiskLevel = 'read' | 'write' | 'execute' | 'destructive';

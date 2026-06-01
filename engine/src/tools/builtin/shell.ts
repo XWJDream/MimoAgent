@@ -38,16 +38,35 @@ export class ShellTool extends BaseTool {
       }
     }
 
-    const result = await executeLocal(command, {
-      workingDir: context.workingDirectory,
-      timeout: timeout || 30000,
-    });
+    // Use sandbox if available, otherwise local execution
+    let result: { stdout: string; stderr: string; exitCode: number; timedOut: boolean; duration: number };
+
+    if (context.sandboxManager) {
+      try {
+        result = await context.sandboxManager.execute(command, {
+          workingDir: context.workingDirectory,
+          timeout: timeout || 30000,
+        });
+      } catch (err) {
+        // Sandbox failed, fallback to local
+        result = await executeLocal(command, {
+          workingDir: context.workingDirectory,
+          timeout: timeout || 30000,
+        });
+      }
+    } else {
+      result = await executeLocal(command, {
+        workingDir: context.workingDirectory,
+        timeout: timeout || 30000,
+      });
+    }
 
     if (result.exitCode === 0) {
       const output = [result.stdout, result.stderr].filter(Boolean).join('\n');
       return {
         output: output || '(no output)',
         isError: false,
+        metadata: { duration: result.duration, sandbox: !!context.sandboxManager },
       };
     }
 
@@ -60,6 +79,7 @@ export class ShellTool extends BaseTool {
         .filter(Boolean)
         .join('\n'),
       isError: true,
+      metadata: { duration: result.duration, sandbox: !!context.sandboxManager },
     };
   }
 }

@@ -10,6 +10,7 @@ import { ProjectMemory } from '../context/memory.js';
 import { FileCache } from '../context/file-cache.js';
 import { UsageTracker } from '../context/usage-tracker.js';
 import { shouldCompact, compactMessages, estimateConversationTokens } from '../context/compaction.js';
+import { SandboxManager } from '../sandbox/manager.js';
 import type { ChatCompletionTool } from 'openai/resources/chat/completions';
 
 export class Agent {
@@ -17,6 +18,7 @@ export class Agent {
   private llmClient: LLMClient;
   private toolRegistry: ToolRegistry;
   private permissionChecker: PermissionChecker | null = null;
+  private sandboxManager: SandboxManager | null = null;
   private conversation: ChatMessage[] = [];
   private memory: ProjectMemory;
   private fileCache: FileCache;
@@ -40,6 +42,9 @@ export class Agent {
     this.memory = new ProjectMemory(this.workspace);
     this.fileCache = new FileCache();
     this.usageTracker = new UsageTracker();
+    if (config.sandbox?.enabled) {
+      this.sandboxManager = new SandboxManager(config.sandbox, true);
+    }
   }
 
   async initialize(): Promise<void> {
@@ -48,11 +53,22 @@ export class Agent {
     // Load project memory and usage history
     await Promise.all([this.memory.load(), this.usageTracker.load()]);
 
+    // Initialize sandbox if enabled
+    if (this.sandboxManager) {
+      try {
+        await this.sandboxManager.initialize();
+        console.log('[Agent] Sandbox initialized:', this.sandboxManager.isEnabled() ? 'active' : 'fallback to local');
+      } catch (err) {
+        console.warn('[Agent] Sandbox init failed, using local execution:', err);
+      }
+    }
+
     // Register built-in tools
     registerBuiltinTools(this.toolRegistry, this.config.toolPreset || 'act');
     this.toolRegistry.setContext({
       workingDirectory: this.workspace,
       fileCache: this.fileCache,
+      sandboxManager: this.sandboxManager || undefined,
     });
     this.permissionChecker = new PermissionChecker(this.config.permissionMode, this.config.pathPermissionRules);
 
