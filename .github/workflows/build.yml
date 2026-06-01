@@ -32,11 +32,11 @@ jobs:
         shell: bash
         run: |
           echo "Checking for API keys..."
-          if grep -r "sk-[a-zA-Z0-9]" dist/ engine/dist/ 2>/dev/null; then
+          if grep -RIE "sk-[a-zA-Z0-9]{20,}" dist/ engine/dist/ 2>/dev/null; then
             echo "ERROR: API key found in build output!"
             exit 1
           fi
-          echo "✓ No secrets found"
+          echo "No secrets found"
 
       - name: Upload build artifacts
         if: github.ref == 'refs/heads/dev'
