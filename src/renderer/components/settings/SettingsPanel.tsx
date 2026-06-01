@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { useConfigStore } from '../../stores/configStore';
-import { ModelSelector } from './ModelSelector';
-import { PermissionMode } from './PermissionMode';
-import { X, Moon, Sun } from 'lucide-react';
+import React, { useState } from "react";
+import { useConfigStore } from "../../stores/configStore";
+import { ModelSelector } from "./ModelSelector";
+import { PermissionMode } from "./PermissionMode";
+import { Moon, Sun } from "lucide-react";
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -11,7 +11,7 @@ interface SettingsPanelProps {
 
 export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
   const { config, setConfig, validateApi } = useConfigStore();
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey, setApiKey] = useState("");
   const [apiBase, setApiBase] = useState(config.apiBase);
 
   if (!isOpen) return null;
@@ -21,165 +21,449 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
       apiBase,
       ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
     });
-    setApiKey('');
+    setApiKey("");
     onClose();
-    // Re-validate after saving
     setTimeout(() => validateApi(), 300);
   };
 
   const handleClearApiKey = () => {
-    setConfig({ apiKey: '' });
-    setApiKey('');
+    setConfig({ apiKey: "" });
+    setApiKey("");
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center animate-fade-in"
-      style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div className="w-full max-w-lg rounded-xl shadow-2xl"
-        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
-        <div className="flex items-center justify-between px-4 py-3"
-          style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-          <h2 className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>设置</h2>
-          <button onClick={onClose}
-            className="w-6 h-6 flex items-center justify-center rounded-md transition-colors duration-150"
-            style={{ color: 'var(--text-muted)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}>
-            <X size={14} strokeWidth={1.5} />
-          </button>
-        </div>
+    <div
+      className="fixed inset-0 z-50 flex flex-col"
+      style={{
+        background:
+          "linear-gradient(145deg, var(--bg-surface) 0%, color-mix(in srgb, var(--bg-surface) 95%, var(--bg-base)) 100%)",
+        animation: "settingsFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+        padding: "20px",
+      }}
+    >
+      <style>{`
+        @keyframes settingsFadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes settingsSlideDown {
+          from {
+            opacity: 0;
+            transform: translateY(-20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .settings-input:focus {
+          border-color: var(--accent) !important;
+          box-shadow: 0 0 0 3px rgba(var(--accent-rgb, 99, 102, 241), 0.15),
+                      0 0 20px rgba(var(--accent-rgb, 99, 102, 241), 0.1);
+        }
+        .settings-input::placeholder {
+          color: var(--text-muted);
+          opacity: 0.6;
+        }
+        .settings-btn-ghost:hover {
+          background: var(--bg-hover) !important;
+          color: var(--text-primary) !important;
+        }
+        .settings-btn-primary {
+          position: relative;
+          overflow: hidden;
+        }
+        .settings-btn-primary::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 50%);
+          opacity: 0;
+          transition: opacity 0.3s ease;
+        }
+        .settings-btn-primary:hover::before {
+          opacity: 1;
+        }
+        .settings-section {
+          position: relative;
+        }
+        .settings-section::before {
+          content: '';
+          position: absolute;
+          left: -16px;
+          top: 8px;
+          bottom: 8px;
+          width: 3px;
+          background: linear-gradient(180deg, var(--accent), transparent);
+          border-radius: 2px;
+          opacity: 0;
+          transition: opacity 0.3s ease;
+        }
+        .settings-section:hover::before {
+          opacity: 1;
+        }
+        .settings-scroll::-webkit-scrollbar {
+          width: 6px;
+        }
+        .settings-scroll::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .settings-scroll::-webkit-scrollbar-thumb {
+          background: var(--border-subtle);
+          border-radius: 3px;
+        }
+        .settings-scroll::-webkit-scrollbar-thumb:hover {
+          background: var(--text-muted);
+        }
+      `}</style>
 
-        <div className="px-4 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
-          <div>
-            <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>模型</label>
+      {/* Header */}
+      <div className="flex items-center justify-center px-8 py-6 shrink-0">
+        <div
+          className="flex items-center gap-4"
+          style={{
+            padding: "70px",
+          }}
+        >
+          <div
+            className="w-12 h-12 rounded-xl flex items-center justify-center"
+            style={{
+              background:
+                "linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 80%, white))",
+              boxShadow:
+                "0 4px 12px rgba(var(--accent-rgb, 99, 102, 241), 0.3)",
+            }}
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="white"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          </div>
+          <div className="text-center">
+            <h2
+              className="text-xl font-semibold tracking-wide"
+              style={{ color: "var(--text-primary)" }}
+            >
+              设置
+            </h2>
+            <p
+              className="text-sm mt-1"
+              style={{ color: "var(--text-muted)", opacity: 0.7 }}
+            >
+              配置你的 AI 助手
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto settings-scroll flex justify-center">
+        <div className="w-full max-w-3xl px-12 py-10 space-y-10">
+          {/* Model */}
+          <div className="settings-section space-y-3">
+            <label
+              className="block text-xs font-semibold uppercase tracking-widest"
+              style={{ color: "var(--accent)", opacity: 0.8 }}
+            >
+              模型
+            </label>
             <ModelSelector />
           </div>
-          <div>
-            <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>API 地址</label>
-            <input type="text" value={apiBase} onChange={(e) => setApiBase(e.target.value)}
-              className="w-full rounded-lg px-3 py-2 text-[13px] focus:outline-none transition-colors duration-150"
-              style={{ background: 'var(--bg-base)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}
-              placeholder="https://api.xiaomimimo.com/v1" />
+
+          {/* API Base */}
+          <div className="settings-section space-y-3">
+            <label
+              className="block text-xs font-semibold uppercase tracking-widest"
+              style={{ color: "var(--accent)", opacity: 0.8 }}
+            >
+              API 地址
+            </label>
+            <input
+              type="text"
+              value={apiBase}
+              onChange={(e) => setApiBase(e.target.value)}
+              className="settings-input w-full rounded-xl px-5 py-4 text-sm focus:outline-none transition-all duration-300"
+              style={{
+                background: "var(--bg-base)",
+                border: "1px solid var(--border-subtle)",
+                color: "var(--text-primary)",
+              }}
+              placeholder="https://api.xiaomimimo.com/v1"
+            />
           </div>
-          <div>
-            <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>API 密钥</label>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[11px]" style={{ color: config.apiKeyConfigured ? 'var(--success)' : 'var(--warning)' }}>
-                {config.apiKeyConfigured ? `已配置：${config.apiKeyPreview}` : '未配置'}
+
+          {/* API Key */}
+          <div className="settings-section space-y-3">
+            <label
+              className="block text-xs font-semibold uppercase tracking-widest"
+              style={{ color: "var(--accent)", opacity: 0.8 }}
+            >
+              API 密钥
+            </label>
+            <div className="flex items-center justify-between mb-2">
+              <span
+                className="text-xs font-medium"
+                style={{
+                  color: config.apiKeyConfigured
+                    ? "var(--success)"
+                    : "var(--warning)",
+                }}
+              >
+                {config.apiKeyConfigured
+                  ? `已配置：${config.apiKeyPreview}`
+                  : "未配置"}
               </span>
               {config.apiKeyConfigured && (
                 <button
                   type="button"
                   onClick={handleClearApiKey}
-                  className="text-[11px] rounded px-1.5 py-0.5 transition-colors duration-150"
-                  style={{ color: 'var(--text-muted)' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error)'; e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'transparent'; }}
+                  className="text-xs rounded-lg px-3 py-1.5 transition-all duration-200 font-medium"
+                  style={{ color: "var(--text-muted)" }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = "var(--error)";
+                    e.currentTarget.style.background = "rgba(239,68,68,0.1)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = "var(--text-muted)";
+                    e.currentTarget.style.background = "transparent";
+                  }}
                 >
                   清除
                 </button>
               )}
             </div>
-            <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
-              className="w-full rounded-lg px-3 py-2 text-[13px] focus:outline-none transition-colors duration-150"
-              style={{ background: 'var(--bg-base)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}
-              placeholder={config.apiKeyConfigured ? '留空则保持当前密钥不变' : '输入 API Key'} />
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              className="settings-input w-full rounded-xl px-5 py-4 text-sm focus:outline-none transition-all duration-300"
+              style={{
+                background: "var(--bg-base)",
+                border: "1px solid var(--border-subtle)",
+                color: "var(--text-primary)",
+              }}
+              placeholder={
+                config.apiKeyConfigured
+                  ? "留空则保持当前密钥不变"
+                  : "输入 API Key"
+              }
+            />
           </div>
-          <div>
-            <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>权限模式</label>
+
+          {/* Permission Mode */}
+          <div className="settings-section space-y-3">
+            <label
+              className="block text-xs font-semibold uppercase tracking-widest"
+              style={{ color: "var(--accent)", opacity: 0.8 }}
+            >
+              权限模式
+            </label>
             <PermissionMode />
           </div>
-          <div>
-            <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>工具模式</label>
-            <div className="flex gap-2">
-              {([['plan', '分析模式', '仅可读取和搜索，适合代码分析'], ['act', '操作模式', '完整工具集，可读写和执行']] as const).map(([value, label, desc]) => (
+
+          {/* Tool Mode */}
+          <div className="settings-section space-y-3">
+            <label
+              className="block text-xs font-semibold uppercase tracking-widest"
+              style={{ color: "var(--accent)", opacity: 0.8 }}
+            >
+              工具模式
+            </label>
+            <div className="grid grid-cols-2 gap-4">
+              {(
+                [
+                  ["plan", "分析模式", "仅可读取和搜索，适合代码分析"],
+                  ["act", "操作模式", "完整工具集，可读写和执行"],
+                ] as const
+              ).map(([value, label, desc]) => (
                 <button
                   key={value}
                   type="button"
                   onClick={() => setConfig({ toolPreset: value })}
-                  className="flex flex-col items-start gap-0.5 px-3 py-2 rounded-lg text-[13px] transition-colors duration-150"
+                  className="flex flex-col items-start gap-2 px-5 py-5 rounded-xl text-sm transition-all duration-300 group"
                   style={{
-                    flex: 1,
-                    background: config.toolPreset === value ? 'var(--accent)' : 'var(--bg-base)',
-                    color: config.toolPreset === value ? '#fff' : 'var(--text-secondary)',
-                    border: `1px solid ${config.toolPreset === value ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                    background:
+                      config.toolPreset === value
+                        ? "linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 80%, white))"
+                        : "var(--bg-base)",
+                    color:
+                      config.toolPreset === value
+                        ? "#fff"
+                        : "var(--text-secondary)",
+                    border: `1px solid ${config.toolPreset === value ? "var(--accent)" : "var(--border-subtle)"}`,
+                    boxShadow:
+                      config.toolPreset === value
+                        ? "0 8px 24px rgba(var(--accent-rgb, 99, 102, 241), 0.3)"
+                        : "none",
                   }}
                 >
-                  <span>{label}</span>
-                  <span className="text-[10px] opacity-70">{desc}</span>
+                  <span className="font-semibold">{label}</span>
+                  <span className="text-xs opacity-70 leading-relaxed">
+                    {desc}
+                  </span>
                 </button>
               ))}
             </div>
           </div>
-          <div>
-            <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
-              温度 ({config.temperature})
+
+          {/* Temperature */}
+          <div className="settings-section space-y-3">
+            <label
+              className="block text-xs font-semibold uppercase tracking-widest"
+              style={{ color: "var(--accent)", opacity: 0.8 }}
+            >
+              温度{" "}
+              <span
+                className="font-normal normal-case tracking-normal opacity-100"
+                style={{ color: "var(--text-muted)" }}
+              >
+                ({config.temperature})
+              </span>
             </label>
-            <input type="range" min="0" max="2" step="0.1" value={config.temperature}
-              onChange={(e) => setConfig({ temperature: parseFloat(e.target.value) })}
-              className="w-full" style={{ accentColor: 'var(--accent)' }} />
+            <div className="px-2 py-2">
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                value={config.temperature}
+                onChange={(e) =>
+                  setConfig({ temperature: parseFloat(e.target.value) })
+                }
+                className="w-full h-2.5 rounded-full appearance-none cursor-pointer"
+                style={{
+                  background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${(config.temperature / 2) * 100}%, var(--border-subtle) ${(config.temperature / 2) * 100}%, var(--border-subtle) 100%)`,
+                  accentColor: "var(--accent)",
+                }}
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>最大轮次</label>
-            <input type="number" min="1" max="200" value={config.maxTurns}
-              onChange={(e) => setConfig({ maxTurns: parseInt(e.target.value) })}
-              className="w-full rounded-lg px-3 py-2 text-[13px] focus:outline-none transition-colors duration-150"
-              style={{ background: 'var(--bg-base)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }} />
+
+          {/* Max Turns */}
+          <div className="settings-section space-y-3">
+            <label
+              className="block text-xs font-semibold uppercase tracking-widest"
+              style={{ color: "var(--accent)", opacity: 0.8 }}
+            >
+              最大轮次
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="200"
+              value={config.maxTurns}
+              onChange={(e) =>
+                setConfig({ maxTurns: parseInt(e.target.value) })
+              }
+              className="settings-input w-full rounded-xl px-5 py-4 text-sm focus:outline-none transition-all duration-300"
+              style={{
+                background: "var(--bg-base)",
+                border: "1px solid var(--border-subtle)",
+                color: "var(--text-primary)",
+              }}
+            />
           </div>
-          <div>
-            <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>沙盒模式</label>
+
+          {/* Sandbox */}
+          <div className="settings-section space-y-3">
+            <label
+              className="block text-xs font-semibold uppercase tracking-widest"
+              style={{ color: "var(--accent)", opacity: 0.8 }}
+            >
+              沙盒模式
+            </label>
             <button
               type="button"
-              onClick={() => setConfig({ sandboxEnabled: !config.sandboxEnabled })}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-[13px] transition-colors duration-150"
+              onClick={() =>
+                setConfig({ sandboxEnabled: !config.sandboxEnabled })
+              }
+              className="w-full flex items-center justify-between px-5 py-5 rounded-xl text-sm transition-all duration-300"
               style={{
-                background: 'var(--bg-base)',
-                border: `1px solid ${config.sandboxEnabled ? 'var(--accent)' : 'var(--border-subtle)'}`,
-                color: config.sandboxEnabled ? 'var(--accent)' : 'var(--text-secondary)',
+                background: config.sandboxEnabled
+                  ? "linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, var(--bg-base)), var(--bg-base))"
+                  : "var(--bg-base)",
+                border: `1px solid ${config.sandboxEnabled ? "var(--accent)" : "var(--border-subtle)"}`,
+                color: config.sandboxEnabled
+                  ? "var(--accent)"
+                  : "var(--text-secondary)",
+                boxShadow: config.sandboxEnabled
+                  ? "0 4px 16px rgba(var(--accent-rgb, 99, 102, 241), 0.15)"
+                  : "none",
               }}
             >
-              <span>{config.sandboxEnabled ? '已启用' : '已关闭'}</span>
-              <span className="text-[10px] opacity-70">需要 Docker，命令在隔离容器中执行</span>
+              <span className="font-semibold">
+                {config.sandboxEnabled ? "已启用" : "已关闭"}
+              </span>
+              <span className="text-xs opacity-70">
+                需要 Docker，命令在隔离容器中执行
+              </span>
             </button>
           </div>
-          <div>
-            <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>主题</label>
-            <div className="flex gap-2">
-              {(['dark', 'light'] as const).map((theme) => (
+
+          {/* Theme */}
+          <div className="settings-section space-y-3">
+            <label
+              className="block text-xs font-semibold uppercase tracking-widest"
+              style={{ color: "var(--accent)", opacity: 0.8 }}
+            >
+              主题
+            </label>
+            <div className="grid grid-cols-2 gap-4">
+              {(["dark", "light"] as const).map((theme) => (
                 <button
                   key={theme}
                   type="button"
                   onClick={() => setConfig({ theme })}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] transition-colors duration-150"
+                  className="flex items-center justify-center gap-3 px-5 py-5 rounded-xl text-sm transition-all duration-300"
                   style={{
-                    flex: 1,
-                    background: config.theme === theme ? 'var(--accent)' : 'var(--bg-base)',
-                    color: config.theme === theme ? '#fff' : 'var(--text-secondary)',
-                    border: `1px solid ${config.theme === theme ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                    background:
+                      config.theme === theme
+                        ? "linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 80%, white))"
+                        : "var(--bg-base)",
+                    color:
+                      config.theme === theme ? "#fff" : "var(--text-secondary)",
+                    border: `1px solid ${config.theme === theme ? "var(--accent)" : "var(--border-subtle)"}`,
+                    boxShadow:
+                      config.theme === theme
+                        ? "0 8px 24px rgba(var(--accent-rgb, 99, 102, 241), 0.3)"
+                        : "none",
                   }}
                 >
-                  {theme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
-                  {theme === 'dark' ? '深色' : '浅色'}
+                  {theme === "dark" ? <Moon size={18} /> : <Sun size={18} />}
+                  <span className="font-semibold">
+                    {theme === "dark" ? "深色" : "浅色"}
+                  </span>
                 </button>
               ))}
             </div>
           </div>
         </div>
+      </div>
 
-        <div className="flex items-center justify-end gap-2 px-4 py-3"
-          style={{ borderTop: '1px solid var(--border-subtle)' }}>
-          <button onClick={onClose}
-            className="px-3 py-1.5 text-[13px] rounded-lg transition-colors duration-150"
-            style={{ color: 'var(--text-secondary)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
+      {/* Footer */}
+      <div className="shrink-0 flex justify-center">
+        <div className="w-full max-w-3xl px-12 py-5 flex items-center justify-center gap-3">
+          <button
+            onClick={onClose}
+            className="btn-secondary"
+            style={{ padding: "10px 24px" }}
+          >
             取消
           </button>
-          <button onClick={handleSave}
-            className="px-3 py-1.5 text-[13px] text-white rounded-lg transition-colors duration-150"
-            style={{ background: 'var(--accent)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-hover)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--accent)'; }}>
+          <button
+            onClick={handleSave}
+            className="btn-primary"
+            style={{ padding: "10px 28px" }}
+          >
             保存
           </button>
         </div>
