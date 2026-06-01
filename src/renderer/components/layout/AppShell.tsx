@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { StatusBar } from './StatusBar';
@@ -13,11 +13,22 @@ import { useChatStore } from '../../stores/chatStore';
 
 type ViewMode = 'chat' | 'workspace' | 'plugins' | 'automation' | 'tts';
 
+const VIEW_KEYS: Record<string, ViewMode> = {
+  '1': 'chat',
+  '2': 'workspace',
+  '3': 'plugins',
+  '4': 'automation',
+  '5': 'tts',
+};
+
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [currentView, setCurrentView] = useState<ViewMode>('chat');
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const mountedRef = useRef<Record<ViewMode, boolean>>({
+    chat: true, workspace: false, plugins: false, automation: false, tts: false,
+  });
   const clearMessages = useChatStore((s) => s.clearMessages);
 
   const handleNewChat = useCallback(() => {
@@ -68,6 +79,15 @@ export function AppShell() {
         return;
       }
 
+      // Ctrl+1~5 — switch panels
+      if ((e.ctrlKey || e.metaKey) && VIEW_KEYS[e.key]) {
+        e.preventDefault();
+        const view = VIEW_KEYS[e.key];
+        mountedRef.current[view] = true;
+        setCurrentView(view);
+        return;
+      }
+
       // Escape — close palette, settings, or panel views
       if (e.key === 'Escape') {
         if (paletteOpen) {
@@ -97,34 +117,50 @@ export function AppShell() {
             />
             <Sidebar
               onOpenSettings={() => setSettingsOpen(true)}
-              onOpenWorkspace={() => setCurrentView('workspace')}
-              onOpenView={(view) => setCurrentView(view)}
+              onOpenWorkspace={() => {
+                if (currentView === 'workspace') {
+                  setCurrentView('chat');
+                } else {
+                  mountedRef.current.workspace = true;
+                  setCurrentView('workspace');
+                }
+              }}
+              onOpenView={(view) => { mountedRef.current[view] = true; setCurrentView(view); }}
               currentView={currentView}
             />
           </>
         )}
 
-        {currentView === 'workspace' ? (
-          <div className="flex-1 overflow-hidden">
-            <WorkspacePanel mode="files" />
-          </div>
-        ) : currentView === 'plugins' ? (
-          <div className="flex-1 overflow-auto" style={{ background: 'var(--bg-workspace)' }}>
-            <PluginPanel onClose={() => setCurrentView('chat')} />
-          </div>
-        ) : currentView === 'automation' ? (
-          <div className="flex-1 overflow-auto" style={{ background: 'var(--bg-workspace)' }}>
-            <AutomationPanel onClose={() => setCurrentView('chat')} />
-          </div>
-        ) : currentView === 'tts' ? (
-          <div className="flex-1 overflow-auto" style={{ background: 'var(--bg-workspace)' }}>
-            <TtsPanel onClose={() => setCurrentView('chat')} />
-          </div>
-        ) : (
-          <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            <ChatPanel />
-          </main>
-        )}
+        <div
+          className="flex flex-col min-h-0 flex-1 overflow-hidden"
+          style={{ display: currentView === 'workspace' ? undefined : 'none' }}
+        >
+          {mountedRef.current.workspace && <WorkspacePanel mode="files" onClose={() => setCurrentView('chat')} />}
+        </div>
+        <div
+          className="flex-1 overflow-auto"
+          style={{ display: currentView === 'plugins' ? undefined : 'none', background: 'var(--bg-workspace)' }}
+        >
+          {mountedRef.current.plugins && <PluginPanel onClose={() => setCurrentView('chat')} />}
+        </div>
+        <div
+          className="flex-1 overflow-auto"
+          style={{ display: currentView === 'automation' ? undefined : 'none', background: 'var(--bg-workspace)' }}
+        >
+          {mountedRef.current.automation && <AutomationPanel onClose={() => setCurrentView('chat')} />}
+        </div>
+        <div
+          className="flex-1 overflow-auto"
+          style={{ display: currentView === 'tts' ? undefined : 'none', background: 'var(--bg-workspace)' }}
+        >
+          {mountedRef.current.tts && <TtsPanel onClose={() => setCurrentView('chat')} />}
+        </div>
+        <main
+          className="flex min-w-0 flex-1 flex-col overflow-hidden"
+          style={{ display: currentView === 'chat' ? undefined : 'none' }}
+        >
+          <ChatPanel />
+        </main>
       </div>
 
       <StatusBar />
@@ -137,8 +173,8 @@ export function AppShell() {
         onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
         onOpenSettings={() => setSettingsOpen(true)}
         onClearChat={handleClearChat}
-        onOpenWorkspace={() => setCurrentView('workspace')}
-        onOpenView={(view) => setCurrentView(view)}
+        onOpenWorkspace={() => { mountedRef.current.workspace = true; setCurrentView('workspace'); }}
+        onOpenView={(view) => { mountedRef.current[view] = true; setCurrentView(view); }}
         sidebarOpen={sidebarOpen}
       />
     </div>

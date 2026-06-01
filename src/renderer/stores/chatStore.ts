@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Message, ToolCallInfo, UsageStats } from '@shared/types';
+import { useConfigStore } from './configStore';
 
 let tokenBuffer = '';
 let tokenFlushScheduled = false;
@@ -23,6 +24,7 @@ interface ChatState {
   currentResponse: string;
   toolCalls: ToolCallInfo[];
   usage: UsageStats;
+  activeSessionId: string;
 
   addMessage: (message: Message) => void;
   setThinking: (thinking: boolean) => void;
@@ -30,14 +32,26 @@ interface ChatState {
   appendToken: (token: string) => void;
   addToolCall: (tool: Pick<ToolCallInfo, 'name' | 'args'>) => void;
   finishToolCall: (result: Pick<ToolCallInfo, 'name' | 'output'> & { isError: boolean }) => void;
-  finishResponse: (usage: { tokens: number; cost: number }) => void;
+  finishResponse: (usage: { tokens: number; cost: number; cachedTokens?: number }) => void;
   failResponse: (error: string) => void;
   clearMessages: () => void;
   editAndResend: (messageId: string, newContent: string) => string | null;
   regenerateFrom: (messageId: string) => string | null;
+  compactMessages: () => void;
+  loadMessages: (sessionId: string) => Promise<void>;
+  switchSession: (sessionId: string) => void;
 }
 
 let responseId = '';
+
+// Debounced save helper
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+function debouncedSave(sessionId: string, messages: Message[]) {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    window.api?.messages?.save(sessionId, messages).catch(console.error);
+  }, 500);
+}
 
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
@@ -45,16 +59,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isStreaming: false,
   currentResponse: '',
   toolCalls: [],
+  activeSessionId: 'default',
   usage: {
     sessionTokens: 0,
     sessionCost: 0,
     sessionToolCalls: 0,
+    sessionCachedTokens: 0,
+    sessionPromptTokens: 0,
+    sessionCompletionTokens: 0,
     totalTokens: 0,
     totalCost: 0,
     totalToolCalls: 0,
   },
 
-  addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
+  addMessage: (message) => {
+    set((state) => {
+      const newMessages = [...state.messages, message];
+      debouncedSave(state.activeSessionId, newMessages);
+      return { messages: newMessages };
+    });
+  },
 
   setThinking: (thinking) => set({ isThinking: thinking }),
 
@@ -139,10 +163,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
             role: 'assistant' as const,
             content: currentResponse,
             timestamp: Date.now(),
-            usage: { tokens: usage.tokens, cost: usage.cost },
+            usage: { tokens: usage.tokens, cost: usage.cost, cachedTokens: usage.cachedTokens },
           },
         ]
       : messages;
+    const newSessionTokens = prevUsage.sessionTokens + usage.tokens;
+    const { activeSessionId } = get();
     set({
       isStreaming: false,
       isThinking: false,
@@ -150,60 +176,80 @@ export const useChatStore = create<ChatState>((set, get) => ({
       currentResponse: '',
       usage: {
         ...prevUsage,
-        sessionTokens: prevUsage.sessionTokens + usage.tokens,
+        sessionTokens: newSessionTokens,
         sessionCost: prevUsage.sessionCost + usage.cost,
         totalTokens: prevUsage.totalTokens + usage.tokens,
         totalCost: prevUsage.totalCost + usage.cost,
+        sessionCachedTokens: (prevUsage.sessionCachedTokens ?? 0) + (usage.cachedTokens ?? 0),
       },
     });
+    debouncedSave(activeSessionId, updatedMessages);
 
-    // Auto-compress conversation when it gets too long
-    if (updatedMessages.length > 30) {
-      window.api?.conversation.compact().then(() => {
-        const { messages: currentMessages } = get();
-        if (currentMessages.length > 30) {
-          set({
-            messages: [
-              {
-                id: 'compact-summary',
-                role: 'system',
-                content: '[对话历史已自动压缩]',
-                timestamp: Date.now(),
-              },
-              ...currentMessages.slice(-10),
-            ],
-          });
-        }
-      }).catch(console.error);
+    // Estimate current context size from message content
+    // Each message adds to the context sent to the API
+    const estimatedContextTokens = updatedMessages.reduce((sum, m) => {
+      // Rough estimate: 1 token ≈ 4 chars for Chinese/English mixed content
+      return sum + Math.ceil((m.content?.length || 0) / 3) + 50; // +50 for role/formatting overhead
+    }, 2000); // +2000 for system prompt
+
+    const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+      'mimo-v2.5-pro': 1048576,
+      'mimo-v2.5': 262144,
+      'mimo-v2.5-tts': 128000,
+      'mimo-v2.5-tts-voiceclone': 128000,
+      'mimo-v2.5-tts-voicedesign': 128000,
+    };
+    const model = useConfigStore.getState().config.model;
+    const contextWindow = MODEL_CONTEXT_WINDOWS[model] || 128000;
+
+    // Compress when estimated context exceeds 70% of window
+    if (estimatedContextTokens > contextWindow * 0.7) {
+      get().compactMessages();
     }
   },
 
   failResponse: (error) => {
-    const { messages } = get();
+    const { messages, activeSessionId } = get();
+    const newMessages: Message[] = [
+      ...messages,
+      {
+        id: Date.now().toString(36),
+        role: 'system' as const,
+        content: `运行失败：${error}`,
+        timestamp: Date.now(),
+      },
+    ];
     set({
       isStreaming: false,
       isThinking: false,
       currentResponse: '',
-      messages: [
-        ...messages,
-        {
-          id: Date.now().toString(36),
-          role: 'system',
-          content: `运行失败：${error}`,
-          timestamp: Date.now(),
-        },
-      ],
+      messages: newMessages,
     });
+    debouncedSave(activeSessionId, newMessages);
   },
 
-  clearMessages: () =>
+  clearMessages: () => {
+    const { activeSessionId } = get();
     set({
       messages: [],
       currentResponse: '',
       toolCalls: [],
       isThinking: false,
       isStreaming: false,
-    }),
+      usage: {
+        sessionTokens: 0,
+        sessionCost: 0,
+        sessionToolCalls: 0,
+        sessionCachedTokens: 0,
+        sessionPromptTokens: 0,
+        sessionCompletionTokens: 0,
+        totalTokens: 0,
+        totalCost: 0,
+        totalToolCalls: 0,
+      },
+    });
+    window.api?.messages?.save(activeSessionId, []).catch(console.error);
+  },
 
   editAndResend: (messageId, newContent) => {
     const { messages } = get();
@@ -240,5 +286,49 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const truncated = messages.slice(0, idx);
     set({ messages: truncated, isThinking: true });
     return userMsg.content;
+  },
+
+  compactMessages: () => {
+    const { messages, activeSessionId } = get();
+    if (messages.length <= 5) return;
+    window.api?.conversation.compact().then(() => {
+      const { messages: currentMessages } = get();
+      if (currentMessages.length > 5) {
+        const compacted: Message[] = [
+          {
+            id: 'compact-summary',
+            role: 'system' as const,
+            content: '[对话历史已自动压缩]',
+            timestamp: Date.now(),
+          },
+          ...currentMessages.slice(-6),
+        ];
+        set({ messages: compacted });
+        debouncedSave(activeSessionId, compacted);
+      }
+    }).catch(console.error);
+  },
+
+  loadMessages: async (sessionId: string) => {
+    try {
+      const result = await window.api?.messages?.load(sessionId);
+      if (result?.messages && result.messages.length > 0) {
+        set({ messages: result.messages, activeSessionId: sessionId });
+      } else {
+        set({ messages: [], activeSessionId: sessionId });
+      }
+    } catch {
+      set({ messages: [], activeSessionId: sessionId });
+    }
+  },
+
+  switchSession: (sessionId: string) => {
+    // Save current messages before switching
+    const { messages, activeSessionId } = get();
+    if (messages.length > 0) {
+      window.api?.messages?.save(activeSessionId, messages).catch(console.error);
+    }
+    // Load new session messages
+    get().loadMessages(sessionId);
   },
 }));

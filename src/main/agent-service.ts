@@ -6,7 +6,40 @@ import type { AppConfig } from '../shared/types.js';
 
 // Dynamic import for mimo-agent (compiled JS)
 let AgentClass: any = null;
-type AgentRuntimeConfig = Pick<AppConfig, 'apiKey' | 'apiBase' | 'model' | 'permissionMode' | 'maxTurns' | 'temperature' | 'sandboxEnabled'>;
+type AgentRuntimeConfig = Pick<AppConfig, 'apiKey' | 'apiBase' | 'model' | 'permissionMode' | 'toolPreset' | 'maxTurns' | 'temperature' | 'sandboxEnabled'>;
+
+export function buildAgentConfig(config: AgentRuntimeConfig) {
+  return {
+    model: config.model,
+    apiBase: config.apiBase,
+    apiKey: config.apiKey,
+    maxTokens: 4096,
+    temperature: config.temperature,
+    contextWindow: 128000,
+    permissionMode: config.permissionMode,
+    toolPreset: config.toolPreset,
+    allowedTools: [],
+    blockedTools: [],
+    allowedPaths: [],
+    maxTurns: config.maxTurns,
+    disableDefaultTools: [],
+    sandbox: {
+      enabled: config.sandboxEnabled,
+      image: '',
+      memoryLimit: '512m',
+      cpuLimit: 1,
+      networkEnabled: false,
+      timeout: 30000,
+    },
+    theme: 'dark',
+    stream: true,
+    verbose: false,
+    subAgents: {
+      enabled: config.toolPreset === 'act',
+      maxConcurrent: 3,
+    },
+  };
+}
 
 export class AgentService {
   private agent: any = null;
@@ -27,6 +60,7 @@ export class AgentService {
         this.currentConfig.apiBase === config.apiBase &&
         this.currentConfig.model === config.model &&
         this.currentConfig.permissionMode === config.permissionMode &&
+        this.currentConfig.toolPreset === config.toolPreset &&
         this.currentConfig.maxTurns === config.maxTurns &&
         this.currentConfig.temperature === config.temperature &&
         this.currentConfig.sandboxEnabled === config.sandboxEnabled &&
@@ -57,35 +91,7 @@ export class AgentService {
     const ws = workspace || this.currentWorkspace || process.cwd();
     this.currentWorkspace = ws;
 
-    const agentConfig = {
-      model: config.model,
-      apiBase: config.apiBase,
-      apiKey: config.apiKey,
-      maxTokens: 4096,
-      temperature: config.temperature,
-      contextWindow: 128000,
-      permissionMode: config.permissionMode,
-      allowedTools: [],
-      blockedTools: [],
-      allowedPaths: [],
-      maxTurns: config.maxTurns,
-      disableDefaultTools: [],
-      sandbox: {
-        enabled: config.sandboxEnabled,
-        image: '',
-        memoryLimit: '512m',
-        cpuLimit: 1,
-        networkEnabled: false,
-        timeout: 30000,
-      },
-      theme: 'dark',
-      stream: true,
-      verbose: false,
-      subAgents: {
-        enabled: false,
-        maxConcurrent: 1,
-      },
-    };
+    const agentConfig = buildAgentConfig(config);
 
     this.agent = new AgentClass(agentConfig, ws);
     console.log('[AgentService] Agent created, initializing...');
@@ -150,6 +156,7 @@ export class AgentService {
           window.webContents.send(IPC.AGENT_DONE, {
             tokens: stats.totalTokens || (stats.promptTokens ?? 0) + (stats.completionTokens ?? 0) || 0,
             cost: stats.totalCost || 0,
+            cachedTokens: stats.sessionCachedTokens ?? 0,
           });
         } else if (event.type === 'error') {
           if (this.abortController.signal.aborted) {
@@ -158,6 +165,7 @@ export class AgentService {
             window.webContents.send(IPC.AGENT_DONE, {
               tokens: stats.totalTokens || (stats.promptTokens ?? 0) + (stats.completionTokens ?? 0) || 0,
               cost: stats.totalCost || 0,
+              cachedTokens: stats.sessionCachedTokens ?? 0,
             });
           } else {
             window.webContents.send(IPC.AGENT_ERROR, event.message);
@@ -173,6 +181,7 @@ export class AgentService {
         window.webContents.send(IPC.AGENT_DONE, {
           tokens: stats.totalTokens || (stats.promptTokens ?? 0) + (stats.completionTokens ?? 0) || 0,
           cost: stats.totalCost || 0,
+          cachedTokens: stats.sessionCachedTokens ?? 0,
         });
       } else {
         console.error('[AgentService] Exception:', message);

@@ -1,3 +1,4 @@
+import type { BaseTool } from '../base.js';
 import type { ToolRegistry } from '../registry.js';
 import { ReadFileTool } from './read-file.js';
 import { WriteFileTool } from './write-file.js';
@@ -10,23 +11,46 @@ import { GitStatusTool } from './git-status.js';
 import { GitCommitTool } from './git-commit.js';
 import { WebFetchTool } from './web-fetch.js';
 import { GitCheckpointTool } from './git-checkpoint.js';
+import { SubAgentsRunTool } from './sub-agents-run.js';
+import { InMemoryTaskStore } from './task.js';
+import type { MimoConfig, SubAgentConfig } from '../../config/types.js';
+import type { PermissionChecker } from '../../permissions/checker.js';
 
-export function registerBuiltinTools(registry: ToolRegistry, preset: string = 'act'): void {
-  const allTools = [
+interface RegisterBuiltinToolsOptions {
+  mimoConfig?: MimoConfig;
+  subAgents?: SubAgentConfig;
+  getPermissionChecker?: () => PermissionChecker | null;
+}
+
+export function registerBuiltinTools(
+  registry: ToolRegistry,
+  preset: string = 'act',
+  options: RegisterBuiltinToolsOptions = {},
+): void {
+  const taskStore = new InMemoryTaskStore();
+  const allTools: BaseTool[] = [
     new ReadFileTool(),
     new WriteFileTool(),
     new EditFileTool(),
     new GrepTool(),
     new GlobTool(),
     new ShellTool(),
-    new TaskCreateTool(),
-    new TaskUpdateTool(),
-    new TaskListTool(),
+    new TaskCreateTool(taskStore),
+    new TaskUpdateTool(taskStore),
+    new TaskListTool(taskStore),
     new GitStatusTool(),
     new GitCommitTool(),
     new WebFetchTool(),
     new GitCheckpointTool(),
   ];
+
+  if (preset === 'act' && options.mimoConfig && options.subAgents?.enabled) {
+    allTools.push(new SubAgentsRunTool({
+      mimoConfig: options.mimoConfig,
+      parentRegistry: registry,
+      getPermissionChecker: options.getPermissionChecker,
+    }));
+  }
 
   if (preset === 'plan') {
     // Read-only tools only (web_fetch is read-only, included in plan)
@@ -50,3 +74,4 @@ export { GitStatusTool } from './git-status.js';
 export { GitCommitTool } from './git-commit.js';
 export { WebFetchTool } from './web-fetch.js';
 export { GitCheckpointTool } from './git-checkpoint.js';
+export { SubAgentsRunTool } from './sub-agents-run.js';

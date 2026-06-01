@@ -7,7 +7,7 @@ export interface IpcChannels {
   'agent:token': (token: string) => void;
   'agent:tool-start': (tool: { name: string; args: Record<string, unknown> }) => void;
   'agent:tool-result': (result: { name: string; output: string; isError: boolean }) => void;
-  'agent:done': (usage: { tokens: number; cost: number }) => void;
+  'agent:done': (usage: { tokens: number; cost: number; cachedTokens?: number }) => void;
   'agent:error': (error: string) => void;
   'agent:thinking': () => void;
 
@@ -93,7 +93,7 @@ export interface Message {
   timestamp: number;
   toolCalls?: ToolCallInfo[];
   toolResult?: ToolResultInfo;
-  usage?: { tokens: number; cost: number };
+  usage?: { tokens: number; cost: number; cachedTokens?: number };
 }
 
 export interface ToolCallInfo {
@@ -121,6 +121,9 @@ export interface UsageStats {
   sessionTokens: number;
   sessionCost: number;
   sessionToolCalls: number;
+  sessionCachedTokens: number;
+  sessionPromptTokens: number;
+  sessionCompletionTokens: number;
   totalTokens: number;
   totalCost: number;
   totalToolCalls: number;

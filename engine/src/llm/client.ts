@@ -163,6 +163,7 @@ export class LLMClient {
       promptTokens: usage.prompt_tokens,
       completionTokens: usage.completion_tokens,
       totalTokens: usage.total_tokens,
+      cachedTokens: (usage as any).prompt_tokens_details?.cached_tokens ?? (usage as any).cached_tokens ?? 0,
     };
   }
 }

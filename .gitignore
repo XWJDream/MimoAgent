@@ -10,6 +10,7 @@ out/
 !.env.example
 
 .mimo-agent/
+.claude/
 *.log
 *.tsbuildinfo
 *.wav

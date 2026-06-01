@@ -9,6 +9,7 @@ export interface UsageRecord {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  cachedTokens: number;
   estimatedCost: number;
   turnCount: number;
   toolCalls: number;
@@ -19,6 +20,7 @@ export interface UsageStats {
   totalPromptTokens: number;
   totalCompletionTokens: number;
   totalTokens: number;
+  totalCachedTokens: number;
   totalEstimatedCost: number;
   totalTurns: number;
   totalToolCalls: number;
@@ -26,6 +28,7 @@ export interface UsageStats {
   sessionPromptTokens: number;
   sessionCompletionTokens: number;
   sessionTokens: number;
+  sessionCachedTokens: number;
   sessionEstimatedCost: number;
   sessionTurns: number;
   sessionToolCalls: number;
@@ -73,7 +76,7 @@ export class UsageTracker {
     }
   }
 
-  recordUsage(model: string, promptTokens: number, completionTokens: number): UsageRecord {
+  recordUsage(model: string, promptTokens: number, completionTokens: number, cachedTokens?: number): UsageRecord {
     const pricing = this.pricing[model] || this.pricing.default;
     const cost =
       (promptTokens / 1_000_000) * pricing.input +
@@ -85,6 +88,7 @@ export class UsageTracker {
       promptTokens,
       completionTokens,
       totalTokens: promptTokens + completionTokens,
+      cachedTokens: cachedTokens ?? 0,
       estimatedCost: cost,
       turnCount: this.currentTurnCount,
       toolCalls: this.currentToolCalls,
@@ -120,11 +124,12 @@ export class UsageTracker {
           promptTokens: acc.promptTokens + r.promptTokens,
           completionTokens: acc.completionTokens + r.completionTokens,
           totalTokens: acc.totalTokens + r.totalTokens,
+          cachedTokens: acc.cachedTokens + (r.cachedTokens ?? 0),
           cost: acc.cost + r.estimatedCost,
           turns: acc.turns + r.turnCount,
           toolCalls: acc.toolCalls + r.toolCalls,
         }),
-        { promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, turns: 0, toolCalls: 0 },
+        { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedTokens: 0, cost: 0, turns: 0, toolCalls: 0 },
       );
 
     const total = aggregate(this.records);
@@ -146,6 +151,7 @@ export class UsageTracker {
       totalPromptTokens: total.promptTokens,
       totalCompletionTokens: total.completionTokens,
       totalTokens: total.totalTokens,
+      totalCachedTokens: total.cachedTokens,
       totalEstimatedCost: total.cost,
       totalTurns: total.turns,
       totalToolCalls: total.toolCalls,
@@ -153,11 +159,24 @@ export class UsageTracker {
       sessionPromptTokens: session.promptTokens,
       sessionCompletionTokens: session.completionTokens,
       sessionTokens: session.totalTokens,
+      sessionCachedTokens: session.cachedTokens,
       sessionEstimatedCost: session.cost,
       sessionTurns: session.turns,
       sessionToolCalls: session.toolCalls,
       byModel,
       recentRecords: this.records.slice(-10),
+    };
+  }
+
+  getSessionStats(): { totalTokens: number; promptTokens: number; completionTokens: number; totalCost: number; sessionCachedTokens: number; sessionToolCalls: number } {
+    const stats = this.getStats();
+    return {
+      totalTokens: stats.sessionTokens,
+      promptTokens: stats.sessionPromptTokens,
+      completionTokens: stats.sessionCompletionTokens,
+      totalCost: stats.sessionEstimatedCost,
+      sessionCachedTokens: stats.sessionCachedTokens,
+      sessionToolCalls: stats.sessionToolCalls,
     };
   }
 

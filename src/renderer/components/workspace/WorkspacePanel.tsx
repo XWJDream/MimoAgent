@@ -1,11 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FileTreeNode, WorkspaceInfo } from '../../../shared/types';
-import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, RefreshCw, X } from 'lucide-react';
+import { highlightCode } from '../../lib/highlighter';
 
 type WorkspacePanelMode = 'workspace' | 'files';
 
 interface WorkspacePanelProps {
   mode: WorkspacePanelMode;
+  onClose?: () => void;
 }
 
 type FilePreview = {
@@ -74,25 +76,20 @@ function FileTree({
   nodes,
   selectedPath,
   onSelectFile,
+  openPaths,
+  onToggleDirectory,
 }: {
   nodes: FileTreeNode[];
   selectedPath: string | null;
   onSelectFile: (node: FileTreeNode) => void;
+  openPaths: Set<string>;
+  onToggleDirectory: (path: string) => void;
 }) {
-  const [openPaths, setOpenPaths] = useState<Set<string>>(() => new Set());
-
-  const toggleDirectory = (path: string) => {
-    setOpenPaths((current) => {
-      const next = new Set(current);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
-  };
+  const toggleDirectory = onToggleDirectory;
 
   const renderNode = (node: FileTreeNode, depth = 0) => {
     const isDirectory = node.type === 'directory';
-    const isOpen = openPaths.has(node.path) || depth < 1;
+    const isOpen = openPaths.has(node.path);
     const isSelected = selectedPath === node.path;
     const children = node.children || [];
 
@@ -135,6 +132,9 @@ function FileExplorer({
   onSelectWorkspace,
   onRefreshFiles,
   onSelectFile,
+  openPaths,
+  onToggleDirectory,
+  onClose,
 }: {
   workspace: WorkspaceInfo | null;
   files: FileTreeNode[];
@@ -145,8 +145,26 @@ function FileExplorer({
   onSelectWorkspace: () => void;
   onRefreshFiles: () => void;
   onSelectFile: (node: FileTreeNode) => void;
+  openPaths: Set<string>;
+  onToggleDirectory: (path: string) => void;
+  onClose: () => void;
 }) {
   const previewLines = useMemo(() => preview?.content.split(/\r?\n/).slice(0, 400).join('\n') || '', [preview]);
+  const [highlightedHtml, setHighlightedHtml] = useState<string>('');
+  const ext = useMemo(() => {
+    if (!preview?.name) return '';
+    const dot = preview.name.lastIndexOf('.');
+    return dot >= 0 ? preview.name.slice(dot + 1) : '';
+  }, [preview?.name]);
+
+  useEffect(() => {
+    if (!previewLines || !ext) { setHighlightedHtml(''); return; }
+    let cancelled = false;
+    highlightCode(previewLines, ext).then((html: string) => {
+      if (!cancelled) setHighlightedHtml(html);
+    });
+    return () => { cancelled = true; };
+  }, [previewLines, ext]);
 
   return (
     <section className="workspace-panel files-mode">
@@ -163,6 +181,9 @@ function FileExplorer({
           <button className="primary-command compact" onClick={onSelectWorkspace} type="button">
             选择目录
           </button>
+          <button className="icon-button" onClick={onClose} type="button" title="返回聊天">
+            <X size={16} />
+          </button>
         </div>
       </div>
 
@@ -176,7 +197,7 @@ function FileExplorer({
           {loading ? <div className="empty-rail">正在读取文件树...</div> : null}
           {!loading && files.length === 0 ? <div className="empty-rail">没有可展示的文件。</div> : null}
           {!loading && files.length > 0 ? (
-            <FileTree nodes={files} selectedPath={selectedPath} onSelectFile={onSelectFile} />
+            <FileTree nodes={files} selectedPath={selectedPath} onSelectFile={onSelectFile} openPaths={openPaths} onToggleDirectory={onToggleDirectory} />
           ) : null}
         </div>
 
@@ -186,7 +207,14 @@ function FileExplorer({
             <span className="truncate">{preview?.name || '选择文件预览'}</span>
           </div>
           {preview ? (
-            <pre>{previewLines}</pre>
+            highlightedHtml ? (
+              <div
+                className="file-content"
+                dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+              />
+            ) : (
+              <pre className="file-content">{previewLines}</pre>
+            )
           ) : (
             <div className="file-preview-empty">从左侧文件树选择一个文件。</div>
           )}
@@ -196,7 +224,7 @@ function FileExplorer({
   );
 }
 
-export function WorkspacePanel({ mode }: WorkspacePanelProps) {
+export function WorkspacePanel({ mode, onClose }: WorkspacePanelProps) {
   const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null);
   const [files, setFiles] = useState<FileTreeNode[]>([]);
   const [preview, setPreview] = useState<FilePreview | null>(null);
@@ -204,6 +232,50 @@ export function WorkspacePanel({ mode }: WorkspacePanelProps) {
   const [loadingWorkspace, setLoadingWorkspace] = useState(false);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openPaths, setOpenPaths] = useState<Set<string>>(() => new Set());
+
+  // LRU file content cache (max 50 entries)
+  const fileCacheRef = useRef(new Map<string, string>());
+  const cacheOrderRef = useRef<string[]>([]);
+
+  const getCachedFile = useCallback((path: string): string | undefined => {
+    const cache = fileCacheRef.current;
+    if (!cache.has(path)) return undefined;
+    // Move to end (most recently used)
+    const order = cacheOrderRef.current;
+    const idx = order.indexOf(path);
+    if (idx >= 0) order.splice(idx, 1);
+    order.push(path);
+    return cache.get(path);
+  }, []);
+
+  const setCachedFile = useCallback((path: string, content: string) => {
+    const cache = fileCacheRef.current;
+    const order = cacheOrderRef.current;
+    if (cache.has(path)) {
+      cache.set(path, content);
+      const idx = order.indexOf(path);
+      if (idx >= 0) order.splice(idx, 1);
+      order.push(path);
+    } else {
+      cache.set(path, content);
+      order.push(path);
+      // Evict oldest if over limit
+      while (order.length > 50) {
+        const evict = order.shift()!;
+        cache.delete(evict);
+      }
+    }
+  }, []);
+
+  const handleToggleDirectory = useCallback((path: string) => {
+    setOpenPaths((current) => {
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
 
   const loadWorkspace = useCallback(async () => {
     setLoadingWorkspace(true);
@@ -226,6 +298,12 @@ export function WorkspacePanel({ mode }: WorkspacePanelProps) {
       const nextFiles = await window.api.files.list(nextWorkspace.path);
       setWorkspace(nextWorkspace);
       setFiles(nextFiles);
+      // Auto-expand root directories
+      const rootDirs = new Set<string>();
+      for (const node of nextFiles) {
+        if (node.type === 'directory') rootDirs.add(node.path);
+      }
+      setOpenPaths(rootDirs);
     } catch (err) {
       setError(err instanceof Error ? err.message : '读取项目文件失败');
       setFiles([]);
@@ -242,6 +320,9 @@ export function WorkspacePanel({ mode }: WorkspacePanelProps) {
       setWorkspace(nextWorkspace);
       setPreview(null);
       setSelectedPath(null);
+      setOpenPaths(new Set());
+      fileCacheRef.current.clear();
+      cacheOrderRef.current = [];
       const nextFiles = await window.api.files.list(nextWorkspace.path);
       setFiles(nextFiles);
     } catch (err) {
@@ -252,14 +333,21 @@ export function WorkspacePanel({ mode }: WorkspacePanelProps) {
   const handleSelectFile = useCallback(async (node: FileTreeNode) => {
     setSelectedPath(node.path);
     setError(null);
+    // Check cache first
+    const cached = getCachedFile(node.path);
+    if (cached !== undefined) {
+      setPreview({ path: node.path, name: node.name, content: cached });
+      return;
+    }
     try {
       const content = await window.api.files.read(node.path);
+      setCachedFile(node.path, content);
       setPreview({ path: node.path, name: node.name, content });
     } catch (err) {
       setPreview(null);
       setError(err instanceof Error ? err.message : '预览文件失败');
     }
-  }, []);
+  }, [getCachedFile, setCachedFile]);
 
   useEffect(() => {
     loadWorkspace();
@@ -292,6 +380,9 @@ export function WorkspacePanel({ mode }: WorkspacePanelProps) {
       onSelectWorkspace={handleSelectWorkspace}
       onRefreshFiles={loadFiles}
       onSelectFile={handleSelectFile}
+      openPaths={openPaths}
+      onToggleDirectory={handleToggleDirectory}
+      onClose={onClose || (() => {})}
     />
   );
 }

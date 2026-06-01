@@ -402,7 +402,37 @@ button { color: inherit; }
   color: #fff;
   padding: 10px 16px;
   border-radius: 14px 14px 4px 14px;
-  max-width: 85%;
+}
+
+/* Message action buttons - hidden by default, show on row hover */
+.message-row .msg-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.message-row:hover .msg-actions {
+  opacity: 1;
+}
+.msg-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.msg-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.msg-action-btn.copied {
+  color: var(--success);
 }
 
 .message-body.panel {
@@ -925,7 +955,13 @@ button { color: inherit; }
 }
 
 .files-mode {
+  overflow: hidden;
+}
+
+.file-workbench {
   display: flex;
+  min-height: 0;
+  flex: 1;
   overflow: hidden;
 }
 
@@ -933,6 +969,7 @@ button { color: inherit; }
   display: flex;
   width: 280px;
   min-width: 220px;
+  min-height: 0;
   flex-direction: column;
   border-right: 1px solid var(--border-subtle);
   background: var(--bg-sidebar);

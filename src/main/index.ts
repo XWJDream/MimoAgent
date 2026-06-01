@@ -1,9 +1,14 @@
 import { app, BrowserWindow, protocol, session } from 'electron';
 import { config } from 'dotenv';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { createMainWindow } from './window.js';
 import { registerIpcHandlers } from './ipc.js';
 import { ttsAudioStore } from './tts-store.js';
+
+// ESM-compatible __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Load .env file
 config({ path: join(__dirname, '..', '..', '.env') });

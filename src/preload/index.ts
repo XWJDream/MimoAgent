@@ -27,6 +27,8 @@ const IPC = {
   SESSION_SET_WORKSPACE: 'session:set-workspace',
   SESSIONS_SAVE: 'sessions:save',
   SESSIONS_LOAD: 'sessions:load',
+  MESSAGES_SAVE: 'messages:save',
+  MESSAGES_LOAD: 'messages:load',
 
   FILE_LIST: 'file:list',
   FILE_READ: 'file:read',
@@ -88,8 +90,8 @@ const api = {
       ipcRenderer.on(IPC.AGENT_TOOL_RESULT, handler);
       return () => ipcRenderer.removeListener(IPC.AGENT_TOOL_RESULT, handler);
     },
-    onDone: (cb: (usage: { tokens: number; cost: number }) => void) => {
-      const handler = (_: unknown, usage: { tokens: number; cost: number }) => cb(usage);
+    onDone: (cb: (usage: { tokens: number; cost: number; cachedTokens?: number }) => void) => {
+      const handler = (_: unknown, usage: { tokens: number; cost: number; cachedTokens?: number }) => cb(usage);
       ipcRenderer.on(IPC.AGENT_DONE, handler);
       return () => ipcRenderer.removeListener(IPC.AGENT_DONE, handler);
     },
@@ -157,6 +159,12 @@ const api = {
   sessions: {
     save: (sessions: unknown[]) => ipcRenderer.invoke(IPC.SESSIONS_SAVE, sessions),
     load: () => ipcRenderer.invoke(IPC.SESSIONS_LOAD),
+  },
+
+  // Messages persistence
+  messages: {
+    save: (sessionId: string, messages: unknown[]) => ipcRenderer.invoke(IPC.MESSAGES_SAVE, sessionId, messages),
+    load: (sessionId: string) => ipcRenderer.invoke(IPC.MESSAGES_LOAD, sessionId),
   },
 
   // Git
