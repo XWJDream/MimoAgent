@@ -90,8 +90,8 @@ const api = {
       ipcRenderer.on(IPC.AGENT_TOOL_RESULT, handler);
       return () => ipcRenderer.removeListener(IPC.AGENT_TOOL_RESULT, handler);
     },
-    onDone: (cb: (usage: { tokens: number; cost: number; cachedTokens?: number }) => void) => {
-      const handler = (_: unknown, usage: { tokens: number; cost: number; cachedTokens?: number }) => cb(usage);
+    onDone: (cb: (usage: { tokens: number; cost: number; cachedTokens?: number; promptTokens?: number; completionTokens?: number }) => void) => {
+      const handler = (_: unknown, usage: { tokens: number; cost: number; cachedTokens?: number; promptTokens?: number; completionTokens?: number }) => cb(usage);
       ipcRenderer.on(IPC.AGENT_DONE, handler);
       return () => ipcRenderer.removeListener(IPC.AGENT_DONE, handler);
     },

@@ -157,6 +157,8 @@ export class AgentService {
             tokens: stats.totalTokens || (stats.promptTokens ?? 0) + (stats.completionTokens ?? 0) || 0,
             cost: stats.totalCost || 0,
             cachedTokens: stats.sessionCachedTokens ?? 0,
+            promptTokens: stats.promptTokens ?? 0,
+            completionTokens: stats.completionTokens ?? 0,
           });
         } else if (event.type === 'error') {
           if (this.abortController.signal.aborted) {
@@ -166,6 +168,8 @@ export class AgentService {
               tokens: stats.totalTokens || (stats.promptTokens ?? 0) + (stats.completionTokens ?? 0) || 0,
               cost: stats.totalCost || 0,
               cachedTokens: stats.sessionCachedTokens ?? 0,
+              promptTokens: stats.promptTokens ?? 0,
+              completionTokens: stats.completionTokens ?? 0,
             });
           } else {
             window.webContents.send(IPC.AGENT_ERROR, event.message);
@@ -182,6 +186,8 @@ export class AgentService {
           tokens: stats.totalTokens || (stats.promptTokens ?? 0) + (stats.completionTokens ?? 0) || 0,
           cost: stats.totalCost || 0,
           cachedTokens: stats.sessionCachedTokens ?? 0,
+          promptTokens: stats.promptTokens ?? 0,
+          completionTokens: stats.completionTokens ?? 0,
         });
       } else {
         console.error('[AgentService] Exception:', message);
