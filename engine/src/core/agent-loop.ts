@@ -25,14 +25,14 @@ export interface AgentLoopOptions {
   onToken?: (token: string) => void;
   onToolStart?: (name: string, args: Record<string, unknown>) => void;
   onToolResult?: (name: string, result: ToolResult) => void;
-  onUsage?: (promptTokens: number, completionTokens: number) => void;
+  onUsage?: (promptTokens: number, completionTokens: number, cachedTokens?: number) => void;
   hooks?: AgentHooks;
 }
 
 export async function* agentLoop(
   messages: ChatMessage[],
   tools: ChatCompletionTool[],
-  llmClient: LLMClient,
+  llmClient: Pick<LLMClient, 'chat' | 'chatStream'>,
   toolRegistry: ToolRegistry,
   permissionChecker: PermissionChecker | null,
   options: AgentLoopOptions,
@@ -53,6 +53,7 @@ export async function* agentLoop(
 
     let promptTokens = 0;
     let completionTokens = 0;
+    let cachedTokens = 0;
 
     if (options.streaming) {
       const stream = llmClient.chatStream(messages, tools, options.abortSignal);
@@ -67,6 +68,7 @@ export async function* agentLoop(
         if (event.type === 'finish' && event.usage) {
           promptTokens = event.usage.promptTokens;
           completionTokens = event.usage.completionTokens;
+          cachedTokens = event.usage.cachedTokens ?? 0;
         }
         collector.feed(event);
       }
@@ -74,6 +76,7 @@ export async function* agentLoop(
       const response = await llmClient.chat(messages, tools, options.abortSignal);
       promptTokens = response.usage.promptTokens;
       completionTokens = response.usage.completionTokens;
+      cachedTokens = response.usage.cachedTokens ?? 0;
       if (response.content) {
         collector.feed({ type: 'content_delta', delta: response.content });
       }
@@ -87,7 +90,7 @@ export async function* agentLoop(
     }
 
     if (promptTokens > 0 || completionTokens > 0) {
-      options.onUsage?.(promptTokens, completionTokens);
+      options.onUsage?.(promptTokens, completionTokens, cachedTokens);
     }
 
     const { content, toolCalls } = collector.getResult();
@@ -149,6 +152,7 @@ export async function* agentLoop(
       }
 
       options.onToolStart?.(toolCall.name, toolCall.arguments);
+      yield { type: 'tool_start', name: toolCall.name, args: toolCall.arguments };
 
       // beforeTool hook: may skip execution or modify arguments
       let effectiveArgs = toolCall.arguments;

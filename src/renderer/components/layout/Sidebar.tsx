@@ -19,6 +19,7 @@ function basename(path?: string) {
 
 export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentView }: SidebarProps) {
   const { sessions, activeSessionId, setSessions, setActiveSession, addSession, removeSession, setSessionWorkspace } = useSessionStore();
+  const switchSession = useChatStore((s) => s.switchSession);
   const clearMessages = useChatStore((s) => s.clearMessages);
   const model = useConfigStore((s) => s.config.model);
   const activeSession = sessions.find((session) => session.id === activeSessionId) || sessions[0];
@@ -75,7 +76,7 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
 
   const handleSwitchSession = async (id: string) => {
     setActiveSession(id);
-    clearMessages();
+    switchSession(id);
     await window.api.session.switch(id);
   };
 
@@ -223,7 +224,7 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
 
       {/* Footer */}
       <div className="codex-footer">
-        <button onClick={onOpenWorkspace} className="codex-nav-row" type="button">
+        <button onClick={onOpenWorkspace} className={`codex-nav-row ${currentView === 'workspace' ? 'active' : ''}`} type="button">
           <FolderOpen size={16} strokeWidth={1.7} />
           <span>文件浏览</span>
         </button>

@@ -4,7 +4,7 @@ import DOMPurify from 'dompurify';
 import type { Message } from '@shared/types';
 import { highlightCode } from '../../lib/highlighter';
 import { useChatStore } from '../../stores/chatStore';
-import { Pencil, RotateCcw } from 'lucide-react';
+import { Pencil, RotateCcw, Copy, Check } from 'lucide-react';
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -25,8 +25,16 @@ export function MessageBubble({ message, isStreaming, onResend }: MessageBubbleP
   const contentRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
+  const [copied, setCopied] = useState(false);
   const editAndResend = useChatStore((s) => s.editAndResend);
   const regenerateFrom = useChatStore((s) => s.regenerateFrom);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(message.content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  }, [message.content]);
 
   const handleEdit = useCallback(() => {
     if (editing) {
@@ -149,11 +157,17 @@ export function MessageBubble({ message, isStreaming, onResend }: MessageBubbleP
             <>
               <span className="whitespace-pre-wrap break-words leading-relaxed text-sm">{message.content}</span>
               <div className="mt-1 flex items-center justify-between">
-                <div className="flex gap-1">
+                <div className="msg-actions">
+                  <button
+                    onClick={handleCopy}
+                    className={`msg-action-btn ${copied ? 'copied' : ''}`}
+                    title="复制"
+                  >
+                    {copied ? <Check size={12} /> : <Copy size={12} />}
+                  </button>
                   <button
                     onClick={handleEdit}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity"
-                    style={{ color: 'var(--text-muted)' }}
+                    className="msg-action-btn"
                     title="编辑并重新发送"
                   >
                     <Pencil size={12} />
@@ -184,14 +198,22 @@ export function MessageBubble({ message, isStreaming, onResend }: MessageBubbleP
         <div className="mb-1 flex items-center gap-2">
           <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>MimoAgent</span>
           {!isStreaming && !editing && (
-            <button
-              onClick={handleRegenerate}
-              className="opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity"
-              style={{ color: 'var(--text-muted)' }}
-              title="重新生成"
-            >
-              <RotateCcw size={11} />
-            </button>
+            <div className="msg-actions">
+              <button
+                onClick={handleCopy}
+                className={`msg-action-btn ${copied ? 'copied' : ''}`}
+                title="复制"
+              >
+                {copied ? <Check size={11} /> : <Copy size={11} />}
+              </button>
+              <button
+                onClick={handleRegenerate}
+                className="msg-action-btn"
+                title="重新生成"
+              >
+                <RotateCcw size={11} />
+              </button>
+            </div>
           )}
         </div>
         <div className="message-body">
@@ -205,7 +227,8 @@ export function MessageBubble({ message, isStreaming, onResend }: MessageBubbleP
           </div>
           {message.usage && message.usage.tokens > 0 && (
             <div className="mt-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-              {message.usage.tokens.toLocaleString()} tokens · ${message.usage.cost.toFixed(4)}
+              {message.usage.tokens.toLocaleString()} tokens
+              {message.usage.cachedTokens ? ` · 缓存命中 ${message.usage.cachedTokens.toLocaleString()}` : ''}
             </div>
           )}
           <div className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>{formatTime(message.timestamp)}</div>

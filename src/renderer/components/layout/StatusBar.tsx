@@ -65,6 +65,9 @@ export function StatusBar() {
         )}
         <span>{messages.length} 条消息</span>
         <span>{usage.sessionTokens.toLocaleString()} tokens</span>
+        {usage.sessionCachedTokens > 0 && (
+          <span style={{ color: 'var(--success)' }}>缓存 {usage.sessionCachedTokens.toLocaleString()}</span>
+        )}
         <span>{usage.sessionToolCalls} 次工具调用</span>
       </div>
       <div className="flex items-center gap-3">

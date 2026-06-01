@@ -24,6 +24,8 @@ export const IPC = {
   SESSION_SET_WORKSPACE: 'session:set-workspace',
   SESSIONS_SAVE: 'sessions:save',
   SESSIONS_LOAD: 'sessions:load',
+  MESSAGES_SAVE: 'messages:save',
+  MESSAGES_LOAD: 'messages:load',
 
   FILE_LIST: 'file:list',
   FILE_READ: 'file:read',

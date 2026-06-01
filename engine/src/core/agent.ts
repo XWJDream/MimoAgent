@@ -63,14 +63,19 @@ export class Agent {
       }
     }
 
+    this.permissionChecker = new PermissionChecker(this.config.permissionMode, this.config.pathPermissionRules);
+
     // Register built-in tools
-    registerBuiltinTools(this.toolRegistry, this.config.toolPreset || 'act');
+    registerBuiltinTools(this.toolRegistry, this.config.toolPreset || 'act', {
+      mimoConfig: this.config,
+      subAgents: this.config.subAgents,
+      getPermissionChecker: () => this.permissionChecker,
+    });
     this.toolRegistry.setContext({
       workingDirectory: this.workspace,
       fileCache: this.fileCache,
       sandboxManager: this.sandboxManager || undefined,
     });
-    this.permissionChecker = new PermissionChecker(this.config.permissionMode, this.config.pathPermissionRules);
 
     // Build system prompt
     const systemPrompt = buildSystemPrompt(this.config, this.memory.getContent(), this.workspace);
@@ -137,8 +142,8 @@ export class Agent {
       {
         ...loopOptions,
         hooks: this.hooks,
-        onUsage: (promptTokens: number, completionTokens: number) => {
-          this.usageTracker.recordUsage(this.config.model, promptTokens, completionTokens);
+        onUsage: (promptTokens: number, completionTokens: number, cachedTokens?: number) => {
+          this.usageTracker.recordUsage(this.config.model, promptTokens, completionTokens, cachedTokens);
         },
         onToolStart: (name: string, args: Record<string, unknown>) => {
           this.usageTracker.incrementToolCall();

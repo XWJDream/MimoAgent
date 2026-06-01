@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { X, Volume2, Play, Square, Loader2 } from 'lucide-react';
 
 interface TtsPanelProps {
@@ -41,6 +41,24 @@ export function TtsPanel({ onClose }: TtsPanelProps) {
   const startTimeRef = useRef(0);
   const [progress, setProgress] = useState(0);
   const progressTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Cleanup on unmount: stop audio, close AudioContext, clear timer
+  useEffect(() => {
+    return () => {
+      if (sourceRef.current) {
+        try { sourceRef.current.stop(); } catch {}
+        sourceRef.current = null;
+      }
+      if (progressTimer.current) {
+        clearInterval(progressTimer.current);
+        progressTimer.current = null;
+      }
+      if (audioCtxRef.current) {
+        audioCtxRef.current.close().catch(() => {});
+        audioCtxRef.current = null;
+      }
+    };
+  }, []);
 
   const handleGenerate = useCallback(async () => {
     if (!text.trim()) {

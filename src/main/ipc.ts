@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { execSync } from 'child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs';
+import { readdir } from 'fs/promises';
 import { basename, isAbsolute, join, relative, resolve } from 'path';
 import { pathToFileURL } from 'url';
 import { IPC } from '../shared/ipc-channels.js';
@@ -126,13 +127,13 @@ function setWorkspace(path: string): WorkspaceInfo {
   return { path: absolute, name: basename(absolute) };
 }
 
-function listFiles(basePath: string | undefined, depth = 0, seen = { count: 0 }): FileTreeNode[] {
+async function listFiles(basePath: string | undefined, depth = 0, seen = { count: 0 }): Promise<FileTreeNode[]> {
   const absoluteBase = basePath ? ensureInsideWorkspace(basePath) : resolve(getCurrentWorkspace());
   if (depth > maxFileTreeDepth || seen.count >= maxFileTreeEntries) return [];
 
   let entries;
   try {
-    entries = readdirSync(absoluteBase, { withFileTypes: true });
+    entries = await readdir(absoluteBase, { withFileTypes: true });
   } catch {
     return [];
   }
@@ -154,7 +155,7 @@ function listFiles(basePath: string | undefined, depth = 0, seen = { count: 0 })
     };
 
     if (entry.isDirectory() && depth < maxFileTreeDepth) {
-      node.children = listFiles(absolute as string, depth + 1, seen);
+      node.children = await listFiles(absolute as string, depth + 1, seen);
     }
 
     nodes.push(node);
@@ -336,7 +337,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] });
     return result.canceled ? null : result.filePaths[0];
   });
-  ipcMain.handle(IPC.FILE_LIST, (_, path?: string) => listFiles(path));
+  ipcMain.handle(IPC.FILE_LIST, async (_, path?: string) => listFiles(path));
   ipcMain.handle(IPC.FILE_READ, (_, path: string) => readWorkspaceFile(path));
   ipcMain.handle(IPC.FILE_WRITE, (_, path: string, content: string) => {
     writeWorkspaceFile(path, content);
@@ -421,6 +422,27 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       const data = readFileSync(SESSIONS_FILE, 'utf-8');
       return { sessions: JSON.parse(data) };
     } catch { return { sessions: [] }; }
+  });
+
+  // Message persistence per session
+  const MESSAGES_DIR = join(app.getPath('userData'), 'messages');
+
+  ipcMain.handle(IPC.MESSAGES_SAVE, async (_event, sessionId: string, messages: unknown[]) => {
+    try {
+      if (!existsSync(MESSAGES_DIR)) mkdirSync(MESSAGES_DIR, { recursive: true });
+      const filePath = join(MESSAGES_DIR, `${sessionId}.json`);
+      writeFileSync(filePath, JSON.stringify(messages, null, 2));
+      return { success: true };
+    } catch (e) { return { success: false, error: String(e) }; }
+  });
+
+  ipcMain.handle(IPC.MESSAGES_LOAD, async (_event, sessionId: string) => {
+    try {
+      const filePath = join(MESSAGES_DIR, `${sessionId}.json`);
+      if (!existsSync(filePath)) return { messages: [] };
+      const data = readFileSync(filePath, 'utf-8');
+      return { messages: JSON.parse(data) };
+    } catch { return { messages: [] }; }
   });
 
   ipcMain.handle(IPC.GIT_INFO, () => {
