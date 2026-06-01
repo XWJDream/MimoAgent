@@ -9,6 +9,7 @@ import { TaskCreateTool, TaskUpdateTool, TaskListTool } from './task.js';
 import { GitStatusTool } from './git-status.js';
 import { GitCommitTool } from './git-commit.js';
 import { WebFetchTool } from './web-fetch.js';
+import { GitCheckpointTool } from './git-checkpoint.js';
 
 export function registerBuiltinTools(registry: ToolRegistry, preset: string = 'act'): void {
   const allTools = [
@@ -24,12 +25,13 @@ export function registerBuiltinTools(registry: ToolRegistry, preset: string = 'a
     new GitStatusTool(),
     new GitCommitTool(),
     new WebFetchTool(),
+    new GitCheckpointTool(),
   ];
 
   if (preset === 'plan') {
     // Read-only tools only (web_fetch is read-only, included in plan)
     const planTools = allTools.filter(t =>
-      ['read_file', 'grep', 'glob', 'git_status', 'task_create', 'task_update', 'task_list', 'web_fetch'].includes(t.name)
+      ['read_file', 'grep', 'glob', 'git_status', 'git_checkpoint', 'task_create', 'task_update', 'task_list', 'web_fetch'].includes(t.name)
     );
     registry.registerAll(planTools);
   } else {
@@ -47,3 +49,4 @@ export { TaskCreateTool, TaskUpdateTool, TaskListTool } from './task.js';
 export { GitStatusTool } from './git-status.js';
 export { GitCommitTool } from './git-commit.js';
 export { WebFetchTool } from './web-fetch.js';
+export { GitCheckpointTool } from './git-checkpoint.js';

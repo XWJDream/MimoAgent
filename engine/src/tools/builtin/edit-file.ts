@@ -44,9 +44,9 @@ export class EditFileTool extends BaseTool {
     }
 
     try {
-      let content = await readFile(resolved, 'utf-8');
+      const originalContent = await readFile(resolved, 'utf-8');
 
-      const count = content.split(old_string).length - 1;
+      const count = originalContent.split(old_string).length - 1;
       if (count === 0) {
         return { output: 'Error: old_string not found in file', isError: true };
       }
@@ -57,13 +57,41 @@ export class EditFileTool extends BaseTool {
         };
       }
 
-      content = content.replace(old_string, new_string);
-      await writeFile(resolved, content, 'utf-8');
+      const newContent = originalContent.replace(old_string, new_string);
+      await writeFile(resolved, newContent, 'utf-8');
       context.fileCache.invalidate(resolved);
 
+      // Generate diff preview
+      const oldLines = originalContent.split('\n');
+      const updatedLines = newContent.split('\n');
+      const diffLines: string[] = [];
+      let firstChanged = -1;
+      let lastChanged = -1;
+      const maxLen = Math.max(oldLines.length, updatedLines.length);
+      for (let i = 0; i < maxLen; i++) {
+        if ((oldLines[i] || '') !== (updatedLines[i] || '')) {
+          if (firstChanged === -1) firstChanged = i;
+          lastChanged = i;
+        }
+      }
+      if (firstChanged !== -1) {
+        const start = Math.max(0, firstChanged - 2);
+        const end = Math.min(maxLen - 1, lastChanged + 2);
+        for (let i = start; i <= end; i++) {
+          if ((oldLines[i] || '') !== (updatedLines[i] || '')) {
+            diffLines.push(`- ${i + 1}: ${oldLines[i] || ''}`);
+            diffLines.push(`+ ${i + 1}: ${updatedLines[i] || ''}`);
+          }
+        }
+      }
+      const diffPreview = diffLines.length > 0
+        ? '\nDiff:\n' + diffLines.slice(0, 50).join('\n')
+        : '';
+
       return {
-        output: `File edited successfully: ${resolved}`,
+        output: `File edited successfully: ${resolved}${diffPreview}`,
         isError: false,
+        metadata: { diff: diffLines.slice(0, 50) },
       };
     } catch (error) {
       return {

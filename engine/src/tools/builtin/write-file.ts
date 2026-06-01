@@ -1,4 +1,4 @@
-import { writeFile, mkdir } from 'fs/promises';
+import { writeFile, mkdir, readFile } from 'fs/promises';
 import { resolve, relative, dirname } from 'path';
 import { BaseTool, type ToolResult, type ToolContext } from '../base.js';
 import type { ToolDefinition } from '../schema.js';
@@ -35,14 +35,53 @@ export class WriteFileTool extends BaseTool {
     }
 
     try {
+      // Read existing content for diff if file exists
+      let originalContent: string | null = null;
+      try {
+        originalContent = await readFile(resolved, 'utf-8');
+      } catch {
+        // File doesn't exist yet, no diff to show
+      }
+
       await mkdir(dirname(resolved), { recursive: true });
       await writeFile(resolved, content, 'utf-8');
       context.fileCache.invalidate(resolved);
 
       const lines = content.split('\n').length;
+
+      // Generate diff preview when overwriting an existing file
+      const diffLines: string[] = [];
+      if (originalContent !== null && originalContent !== content) {
+        const oldLines = originalContent.split('\n');
+        const newLines = content.split('\n');
+        let firstChanged = -1;
+        let lastChanged = -1;
+        const maxLen = Math.max(oldLines.length, newLines.length);
+        for (let i = 0; i < maxLen; i++) {
+          if ((oldLines[i] || '') !== (newLines[i] || '')) {
+            if (firstChanged === -1) firstChanged = i;
+            lastChanged = i;
+          }
+        }
+        if (firstChanged !== -1) {
+          const start = Math.max(0, firstChanged - 2);
+          const end = Math.min(maxLen - 1, lastChanged + 2);
+          for (let i = start; i <= end; i++) {
+            if ((oldLines[i] || '') !== (newLines[i] || '')) {
+              diffLines.push(`- ${i + 1}: ${oldLines[i] || ''}`);
+              diffLines.push(`+ ${i + 1}: ${newLines[i] || ''}`);
+            }
+          }
+        }
+      }
+      const diffPreview = diffLines.length > 0
+        ? '\nDiff:\n' + diffLines.slice(0, 50).join('\n')
+        : '';
+
       return {
-        output: `File written successfully: ${resolved} (${lines} lines)`,
+        output: `File written successfully: ${resolved} (${lines} lines)${diffPreview}`,
         isError: false,
+        metadata: diffLines.length > 0 ? { diff: diffLines.slice(0, 50) } : undefined,
       };
     } catch (error) {
       return {

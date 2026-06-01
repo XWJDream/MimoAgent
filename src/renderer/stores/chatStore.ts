@@ -18,6 +18,8 @@ interface ChatState {
   finishResponse: (usage: { tokens: number; cost: number }) => void;
   failResponse: (error: string) => void;
   clearMessages: () => void;
+  editAndResend: (messageId: string, newContent: string) => string | null;
+  regenerateFrom: (messageId: string) => string | null;
 }
 
 let responseId = '';
@@ -178,4 +180,41 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isThinking: false,
       isStreaming: false,
     }),
+
+  editAndResend: (messageId, newContent) => {
+    const { messages } = get();
+    const idx = messages.findIndex((m) => m.id === messageId);
+    if (idx === -1) return null;
+
+    // Keep messages before the edited one, replace the edited message content
+    const truncated = messages.slice(0, idx);
+    const editedMsg: Message = {
+      ...messages[idx],
+      content: newContent,
+      timestamp: Date.now(),
+    };
+    set({ messages: [...truncated, editedMsg], isThinking: true });
+    return newContent;
+  },
+
+  regenerateFrom: (messageId) => {
+    const { messages } = get();
+    const idx = messages.findIndex((m) => m.id === messageId);
+    if (idx === -1 || messages[idx].role !== 'assistant') return null;
+
+    // Find the user message before this assistant message
+    let userMsg: Message | null = null;
+    for (let i = idx - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        userMsg = messages[i];
+        break;
+      }
+    }
+    if (!userMsg) return null;
+
+    // Remove the assistant message and everything after
+    const truncated = messages.slice(0, idx);
+    set({ messages: truncated, isThinking: true });
+    return userMsg.content;
+  },
 }));

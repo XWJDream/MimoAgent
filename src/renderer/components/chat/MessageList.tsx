@@ -31,6 +31,13 @@ export function MessageList() {
     }, 50);
   }, []);
 
+  const handleResend = useCallback((content: string) => {
+    window.dispatchEvent(new CustomEvent('mimo:set-input', { detail: content }));
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('mimo:submit-input'));
+    }, 50);
+  }, []);
+
   if (messages.length === 0 && !isStreaming) {
     return (
       <div className="empty-state">
@@ -61,7 +68,7 @@ export function MessageList() {
       <div className="mx-auto max-w-3xl px-6 py-6">
         <div className="space-y-5">
           {messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} />
+            <MessageBubble key={msg.id} message={msg} onResend={handleResend} />
           ))}
           {isStreaming && currentResponse && (
             <MessageBubble
@@ -72,6 +79,7 @@ export function MessageList() {
                 timestamp: Date.now(),
               }}
               isStreaming
+              onResend={handleResend}
             />
           )}
         </div>

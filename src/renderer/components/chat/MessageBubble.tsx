@@ -1,8 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import type { Message } from '@shared/types';
 import { highlightCode } from '../../lib/highlighter';
+import { useChatStore } from '../../stores/chatStore';
+import { Pencil, RotateCcw } from 'lucide-react';
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -13,16 +15,42 @@ function formatTime(ts: number) {
 interface MessageBubbleProps {
   message: Message;
   isStreaming?: boolean;
+  onResend?: (content: string) => void;
 }
 
-export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
+export function MessageBubble({ message, isStreaming, onResend }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const isTool = message.role === 'tool';
   const isSystem = message.role === 'system';
   const contentRef = useRef<HTMLDivElement>(null);
+  const [editing, setEditing] = useState(false);
+  const [editContent, setEditContent] = useState(message.content);
+  const editAndResend = useChatStore((s) => s.editAndResend);
+  const regenerateFrom = useChatStore((s) => s.regenerateFrom);
+
+  const handleEdit = useCallback(() => {
+    if (editing) {
+      // Save and resend
+      const prompt = editAndResend(message.id, editContent);
+      if (prompt && onResend) {
+        onResend(prompt);
+      }
+      setEditing(false);
+    } else {
+      setEditContent(message.content);
+      setEditing(true);
+    }
+  }, [editing, editContent, message.id, message.content, editAndResend, onResend]);
+
+  const handleRegenerate = useCallback(() => {
+    const prompt = regenerateFrom(message.id);
+    if (prompt && onResend) {
+      onResend(prompt);
+    }
+  }, [message.id, regenerateFrom, onResend]);
 
   useEffect(() => {
-    if (isUser || !contentRef.current) return;
+    if (isUser || !contentRef.current || editing) return;
 
     let cancelled = false;
     const el = contentRef.current;
@@ -77,7 +105,7 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
       cancelled = true;
       timers.forEach(clearTimeout);
     };
-  }, [message.content, isUser]);
+  }, [message.content, isUser, editing]);
 
   const sanitizedHtml = isUser ? '' : DOMPurify.sanitize(marked.parse(message.content) as string);
 
@@ -102,15 +130,46 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
     return (
       <article className="message-row user">
         <div className="message-body">
-          <span className="whitespace-pre-wrap break-words leading-relaxed text-sm">{message.content}</span>
-          <div className="mt-1 text-right text-[10px]" style={{ color: 'var(--text-muted)' }}>{formatTime(message.timestamp)}</div>
+          {editing ? (
+            <div>
+              <textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none resize-y"
+                style={{ background: 'var(--bg-base)', border: '1px solid var(--accent)', color: 'var(--text-primary)', minHeight: 60 }}
+                rows={3}
+                autoFocus
+              />
+              <div className="flex gap-2 mt-1 justify-end">
+                <button onClick={() => setEditing(false)} className="text-[11px] px-2 py-0.5 rounded" style={{ color: 'var(--text-muted)' }}>取消</button>
+                <button onClick={handleEdit} className="text-[11px] px-2 py-0.5 rounded text-white" style={{ background: 'var(--accent)' }}>发送</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <span className="whitespace-pre-wrap break-words leading-relaxed text-sm">{message.content}</span>
+              <div className="mt-1 flex items-center justify-between">
+                <div className="flex gap-1">
+                  <button
+                    onClick={handleEdit}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity"
+                    style={{ color: 'var(--text-muted)' }}
+                    title="编辑并重新发送"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                </div>
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{formatTime(message.timestamp)}</span>
+              </div>
+            </>
+          )}
         </div>
       </article>
     );
   }
 
   return (
-    <article className="message-row">
+    <article className="message-row group">
       <div className="message-avatar">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 8V4H8" />
@@ -122,8 +181,18 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
         </svg>
       </div>
       <div className="min-w-0 flex-1">
-        <div className="mb-1">
+        <div className="mb-1 flex items-center gap-2">
           <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>MimoAgent</span>
+          {!isStreaming && !editing && (
+            <button
+              onClick={handleRegenerate}
+              className="opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity"
+              style={{ color: 'var(--text-muted)' }}
+              title="重新生成"
+            >
+              <RotateCcw size={11} />
+            </button>
+          )}
         </div>
         <div className="message-body">
           <div className="text-sm">
