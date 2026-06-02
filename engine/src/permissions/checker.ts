@@ -190,7 +190,9 @@ export class PermissionChecker {
       });
 
       if (allowed) {
-        this.sessionOverrides.set(JSON.stringify({ tool: request.toolName, args: request.args }), true);
+        // Use the same key format as in check() method
+        const key = `${request.toolName}:${JSON.stringify(request.args)}`;
+        this.sessionOverrides.set(key, true);
       }
 
       return { allowed, reason: allowed ? undefined : 'User denied' };

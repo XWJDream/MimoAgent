@@ -153,6 +153,7 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
               <Server size={15} style={{ color: 'var(--accent)' }} />
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>MCP 服务器</span>
+              <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--warning)', color: 'var(--bg-base)', borderRadius: 4, fontWeight: 500 }}>实验性</span>
               <button
                 className="btn-secondary"
                 onClick={() => setShowAddServer(!showAddServer)}
