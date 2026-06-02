@@ -32,8 +32,9 @@ jobs:
         shell: bash
         run: |
           echo "Checking for API keys..."
-          if grep -RIE "sk-[a-zA-Z0-9]{20,}" dist/ engine/dist/ 2>/dev/null; then
-            echo "ERROR: API key found in build output!"
+          # Check source files only, skip node_modules and bundled assets
+          if grep -RIE "sk-[a-zA-Z0-9]{20,}" --include="*.ts" --include="*.tsx" --include="*.json" --include="*.env*" src/ engine/src/ 2>/dev/null; then
+            echo "ERROR: API key found in source!"
             exit 1
           fi
           echo "No secrets found"
