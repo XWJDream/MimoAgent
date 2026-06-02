@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FileTreeNode, WorkspaceInfo } from '../../../shared/types';
 import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, RefreshCw, X } from 'lucide-react';
 import { highlightCode } from '../../lib/highlighter';
+import DOMPurify from 'dompurify';
 
 type WorkspacePanelMode = 'workspace' | 'files';
 
@@ -210,7 +211,7 @@ function FileExplorer({
             highlightedHtml ? (
               <div
                 className="file-content"
-                dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(highlightedHtml) }}
               />
             ) : (
               <pre className="file-content">{previewLines}</pre>

@@ -4,8 +4,71 @@ import { pathToFileURL } from 'url';
 import { IPC } from '../shared/ipc-channels.js';
 import type { AppConfig } from '../shared/types.js';
 
+/** Agent instance interface - matches engine/src/core/agent.ts Agent class */
+interface AgentInstance {
+  initialize(): Promise<void>;
+  run(prompt: string, options?: AgentRunOptions): AsyncGenerator<AgentEvent>;
+  clearConversation(): void;
+  getUsageTracker(): UsageTracker;
+  getToolRegistry(): ToolRegistry;
+  getConversation(): unknown[];
+  setConversation(messages: unknown[]): void;
+  getMemory(): ProjectMemory;
+}
+
+interface ProjectMemory {
+  getContent(): string;
+  setContent(content: string): void;
+  save(): Promise<void>;
+}
+
+interface AgentRunOptions {
+  streaming?: boolean;
+  abortSignal?: AbortSignal;
+  maxTurns?: number;
+  onToken?: (token: string) => void;
+  onToolStart?: (name: string, args: Record<string, unknown>) => void;
+  onToolResult?: (name: string, result: { output: string; isError: boolean }) => void;
+}
+
+interface AgentEvent {
+  type: 'text' | 'tool_start' | 'tool_result' | 'done' | 'error';
+  content?: string;
+  message?: string;
+  name?: string;
+  result?: { output: string; isError: boolean };
+}
+
+interface UsageTracker {
+  getSessionStats(): SessionStats;
+}
+
+interface SessionStats {
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalCost: number;
+  sessionCachedTokens: number;
+  sessionToolCalls: number;
+}
+
+interface ToolRegistry {
+  getAll(): ToolInfo[];
+}
+
+interface ToolInfo {
+  name: string;
+  description?: string;
+  riskLevel?: string;
+  categories?: string[];
+  parameters?: unknown;
+}
+
+/** Agent class constructor type */
+type AgentClassType = new (config: unknown, workspace?: string) => AgentInstance;
+
 // Dynamic import for mimo-agent (compiled JS)
-let AgentClass: any = null;
+let AgentClass: AgentClassType | null = null;
 type AgentRuntimeConfig = Pick<AppConfig, 'apiKey' | 'apiBase' | 'model' | 'permissionMode' | 'toolPreset' | 'maxTurns' | 'temperature' | 'sandboxEnabled'>;
 
 export function buildAgentConfig(config: AgentRuntimeConfig) {
@@ -42,7 +105,7 @@ export function buildAgentConfig(config: AgentRuntimeConfig) {
 }
 
 export class AgentService {
-  private agent: any = null;
+  private agent: AgentInstance | null = null;
   private mainWindow: BrowserWindow | null = null;
   private currentConfig: AgentRuntimeConfig | null = null;
   private currentWorkspace: string = '';
@@ -92,6 +155,10 @@ export class AgentService {
     this.currentWorkspace = ws;
 
     const agentConfig = buildAgentConfig(config);
+
+    if (!AgentClass) {
+      throw new Error('Agent class not loaded');
+    }
 
     this.agent = new AgentClass(agentConfig, ws);
     console.log('[AgentService] Agent created, initializing...');
@@ -208,7 +275,7 @@ export class AgentService {
     this.agent?.clearConversation();
   }
 
-  getAgent() {
+  getAgent(): AgentInstance | null {
     return this.agent;
   }
 }

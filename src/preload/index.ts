@@ -208,6 +208,17 @@ const api = {
   api: {
     validate: () => ipcRenderer.invoke(IPC.API_VALIDATE),
   },
+
+  // Permission
+  permission: {
+    request: (params: { toolName: string; description: string; riskLevel: string }) =>
+      ipcRenderer.invoke(IPC.PERMISSION_REQUEST, params),
+    onResponse: (cb: (response: { requestId: string; allowed: boolean }) => void) => {
+      const handler = (_: unknown, response: { requestId: string; allowed: boolean }) => cb(response);
+      ipcRenderer.on(IPC.PERMISSION_RESPONSE, handler);
+      return () => ipcRenderer.removeListener(IPC.PERMISSION_RESPONSE, handler);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld('api', api);

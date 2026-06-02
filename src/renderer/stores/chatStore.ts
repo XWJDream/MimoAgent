@@ -2,19 +2,36 @@ import { create } from 'zustand';
 import type { Message, ToolCallInfo, UsageStats } from '@shared/types';
 import { useConfigStore } from './configStore';
 
+// Token buffer management with flush guarantee
 let tokenBuffer = '';
 let tokenFlushScheduled = false;
-let tokenFlushCallback: (() => void) | null = null;
+let tokenFlushSetState: ((updater: (state: any) => any) => void) | null = null;
 
 function scheduleTokenFlush() {
   if (tokenFlushScheduled) return;
   tokenFlushScheduled = true;
   requestAnimationFrame(() => {
     tokenFlushScheduled = false;
-    if (tokenBuffer) {
-      tokenFlushCallback?.();
+    if (tokenBuffer && tokenFlushSetState) {
+      const buffered = tokenBuffer;
+      tokenBuffer = '';
+      tokenFlushSetState((state: any) => ({
+        currentResponse: state.currentResponse + buffered,
+      }));
     }
   });
+}
+
+/** Flush any pending tokens synchronously - call before stopping stream */
+function flushTokensSync() {
+  if (tokenBuffer && tokenFlushSetState) {
+    const buffered = tokenBuffer;
+    tokenBuffer = '';
+    tokenFlushScheduled = false;
+    tokenFlushSetState((state: any) => ({
+      currentResponse: state.currentResponse + buffered,
+    }));
+  }
 }
 
 interface ChatState {
@@ -85,9 +102,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setStreaming: (streaming) => {
     if (streaming) {
       responseId = Date.now().toString(36);
+      tokenFlushSetState = set;
       set({ isStreaming: true, currentResponse: '', isThinking: false, toolCalls: [] });
       return;
     }
+
+    // Flush any pending tokens before stopping
+    flushTokensSync();
+    tokenFlushSetState = null;
 
     const { currentResponse, messages } = get();
     if (currentResponse) {
@@ -111,12 +133,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   appendToken: (token) => {
     tokenBuffer += token;
-    tokenFlushCallback = () => {
-      set((state) => ({
-        currentResponse: state.currentResponse + tokenBuffer,
-      }));
-      tokenBuffer = '';
-    };
     scheduleTokenFlush();
   },
 
@@ -168,6 +184,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ]
       : messages;
     const newSessionTokens = prevUsage.sessionTokens + usage.tokens;
+    const promptTokens = usage.promptTokens ?? 0;
+    const completionTokens = usage.completionTokens ?? 0;
+    const cachedTokens = usage.cachedTokens ?? 0;
     const { activeSessionId } = get();
     set({
       isStreaming: false,
@@ -180,9 +199,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         sessionCost: prevUsage.sessionCost + usage.cost,
         totalTokens: prevUsage.totalTokens + usage.tokens,
         totalCost: prevUsage.totalCost + usage.cost,
-        sessionCachedTokens: (prevUsage.sessionCachedTokens ?? 0) + (usage.cachedTokens ?? 0),
-        sessionPromptTokens: (prevUsage.sessionPromptTokens ?? 0) + (usage.promptTokens ?? 0),
-        sessionCompletionTokens: (prevUsage.sessionCompletionTokens ?? 0) + (usage.completionTokens ?? 0),
+        sessionCachedTokens: prevUsage.sessionCachedTokens + cachedTokens,
+        sessionPromptTokens: prevUsage.sessionPromptTokens + promptTokens,
+        sessionCompletionTokens: prevUsage.sessionCompletionTokens + completionTokens,
       },
     });
     debouncedSave(activeSessionId, updatedMessages);
@@ -293,34 +312,80 @@ export const useChatStore = create<ChatState>((set, get) => ({
   compactMessages: () => {
     const { messages, activeSessionId } = get();
     if (messages.length <= 5) return;
-    window.api?.conversation.compact().then(() => {
-      const { messages: currentMessages } = get();
-      if (currentMessages.length > 5) {
-        const compacted: Message[] = [
-          {
-            id: 'compact-summary',
-            role: 'system' as const,
-            content: '[对话历史已自动压缩]',
-            timestamp: Date.now(),
-          },
-          ...currentMessages.slice(-6),
-        ];
-        set({ messages: compacted });
-        debouncedSave(activeSessionId, compacted);
-      }
-    }).catch(console.error);
+
+    // Count removed messages for the summary
+    const removedCount = messages.length - 6;
+
+    // Keep the system message compact info and last 6 messages
+    const compacted: Message[] = [
+      {
+        id: 'compact-summary',
+        role: 'system' as const,
+        content: `[对话历史已自动压缩，移除了 ${removedCount} 条早期消息]`,
+        timestamp: Date.now(),
+      },
+      ...messages.slice(-6),
+    ];
+    set({ messages: compacted });
+    debouncedSave(activeSessionId, compacted);
+
+    // Also compact on the server side
+    window.api?.conversation.compact().catch(console.error);
   },
 
   loadMessages: async (sessionId: string) => {
     try {
       const result = await window.api?.messages?.load(sessionId);
       if (result?.messages && result.messages.length > 0) {
-        set({ messages: result.messages, activeSessionId: sessionId });
+        set({
+          messages: result.messages,
+          activeSessionId: sessionId,
+          // Reset usage for new session - recalculate from messages
+          usage: {
+            sessionTokens: 0,
+            sessionCost: 0,
+            sessionToolCalls: 0,
+            sessionCachedTokens: 0,
+            sessionPromptTokens: 0,
+            sessionCompletionTokens: 0,
+            totalTokens: 0,
+            totalCost: 0,
+            totalToolCalls: 0,
+          },
+        });
       } else {
-        set({ messages: [], activeSessionId: sessionId });
+        set({
+          messages: [],
+          activeSessionId: sessionId,
+          usage: {
+            sessionTokens: 0,
+            sessionCost: 0,
+            sessionToolCalls: 0,
+            sessionCachedTokens: 0,
+            sessionPromptTokens: 0,
+            sessionCompletionTokens: 0,
+            totalTokens: 0,
+            totalCost: 0,
+            totalToolCalls: 0,
+          },
+        });
       }
     } catch {
-      set({ messages: [], activeSessionId: sessionId });
+      set({
+        messages: [],
+        activeSessionId: sessionId,
+        usage: {
+          sessionTokens: 0,
+          sessionCost: 0,
+          sessionToolCalls: 0,
+          sessionCachedTokens: 0,
+          sessionPromptTokens: 0,
+          sessionCompletionTokens: 0,
+          totalTokens: 0,
+          totalCost: 0,
+          totalToolCalls: 0,
+        },
+      });
     }
   },
 
@@ -330,7 +395,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (messages.length > 0) {
       window.api?.messages?.save(activeSessionId, messages).catch(console.error);
     }
-    // Load new session messages
+    // Load new session messages and reset usage
     get().loadMessages(sessionId);
   },
 }));

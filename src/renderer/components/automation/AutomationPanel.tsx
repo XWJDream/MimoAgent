@@ -130,6 +130,7 @@ export function AutomationPanel({ onClose }: AutomationPanelProps) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
               <Zap size={15} style={{ color: 'var(--accent)' }} />
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>规则</span>
+              <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--warning)', color: 'var(--bg-base)', borderRadius: 4, fontWeight: 500 }}>实验性</span>
               <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{rules.length} 个</span>
             </div>
 

@@ -7,10 +7,13 @@ interface ConfigState {
   config: PublicAppConfig;
   apiStatus: ApiStatus;
   apiError: string | null;
-  setConfig: (config: Partial<AppConfig>) => void;
+  setConfig: (config: Partial<AppConfig>) => Promise<void>;
   loadConfig: () => Promise<void>;
   validateApi: () => Promise<void>;
 }
+
+// Queue to prevent race conditions in config writes
+let configWriteQueue: Promise<void> = Promise.resolve();
 
 export const useConfigStore = create<ConfigState>((set, get) => ({
   config: {
@@ -28,7 +31,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   },
   apiStatus: 'unknown',
   apiError: null,
-  setConfig: (partial) => {
+  setConfig: async (partial) => {
     const { apiKey, ...publicPartial } = partial;
     set((state) => ({
       config: {
@@ -45,12 +48,18 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       ...(typeof apiKey === 'string' || partial.apiBase ? { apiStatus: 'unknown' as ApiStatus, apiError: null } : {}),
     }));
     if (window.api?.config) {
-      const entries = Object.entries(partial);
-      Promise.all(entries.map(([key, value]) =>
-        window.api.config.set(key, value).catch((error: Error) => {
-          console.error(`Failed to save config ${key}:`, error);
-        })
-      ));
+      // Chain config writes to prevent race conditions
+      configWriteQueue = configWriteQueue.then(async () => {
+        const entries = Object.entries(partial);
+        for (const [key, value] of entries) {
+          try {
+            await window.api.config.set(key, value);
+          } catch (error) {
+            console.error(`Failed to save config ${key}:`, error);
+          }
+        }
+      });
+      await configWriteQueue;
     }
   },
   loadConfig: async () => {

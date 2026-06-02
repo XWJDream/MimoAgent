@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { execSync } from 'child_process';
+import { randomBytes } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs';
 import { readdir } from 'fs/promises';
 import { basename, isAbsolute, join, relative, resolve } from 'path';
@@ -13,6 +14,11 @@ const SESSIONS_FILE = join(app.getPath('userData'), 'sessions.json');
 const MCP_SERVERS_FILE = join(app.getPath('userData'), 'mcp-servers.json');
 const AUTOMATION_RULES_FILE = join(app.getPath('userData'), 'automation-rules.json');
 const AUTOMATION_EXECUTIONS_FILE = join(app.getPath('userData'), 'automation-executions.json');
+
+/** Generate a unique ID with timestamp + random suffix to avoid collisions */
+function generateId(): string {
+  return `${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`;
+}
 
 const configKeys = new Set<keyof AppConfig>([
   'model',
@@ -134,7 +140,8 @@ async function listFiles(basePath: string | undefined, depth = 0, seen = { count
   let entries;
   try {
     entries = await readdir(absoluteBase, { withFileTypes: true });
-  } catch {
+  } catch (err) {
+    console.warn('[listFiles] Failed to read directory:', absoluteBase, err);
     return [];
   }
 
@@ -287,6 +294,30 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return getPublicConfig();
   });
 
+  // Permission request handler - shows native dialog
+  ipcMain.handle(IPC.PERMISSION_REQUEST, async (_, params: { toolName: string; description: string; riskLevel: string }) => {
+    const { toolName, description, riskLevel } = params;
+
+    // Auto-allow for safe operations in full-auto mode
+    if (currentConfig.permissionMode === 'full-auto' && riskLevel !== 'destructive') {
+      return { allowed: true };
+    }
+
+    // Show native dialog for permission confirmation
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['允许', '拒绝'],
+      defaultId: 1,
+      title: '权限请求',
+      message: `是否允许执行操作？`,
+      detail: `工具: ${toolName}\n风险级别: ${riskLevel}\n\n${description}`,
+      cancelId: 1,
+      noLink: true,
+    });
+
+    return { allowed: result.response === 0 };
+  });
+
   ipcMain.handle(IPC.WORKSPACE_GET, () => getWorkspaceInfo());
   ipcMain.handle(IPC.WORKSPACE_SET, (_, path: string) => setWorkspace(path));
   ipcMain.handle(IPC.WORKSPACE_SELECT, async () => {
@@ -298,7 +329,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.SESSION_CREATE, (_, name?: string, workspacePath?: string) => {
     const ws = workspacePath ? resolve(workspacePath) : '';
     const session: Session = {
-      id: Date.now().toString(36),
+      id: generateId(),
       name: name || `对话 ${sessions.length + 1}`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -312,7 +343,15 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.SESSION_SWITCH, (_, id: string) => {
     const session = sessions.find((s) => s.id === id);
     if (session) {
+      const oldWorkspace = getCurrentWorkspace();
       activeSessionId = id;
+      const newWorkspace = getCurrentWorkspace();
+
+      // If workspace changed, reinitialize agent with new workspace
+      if (newWorkspace !== oldWorkspace && currentConfig.apiKey) {
+        console.log('[IPC] Session switched, workspace changed, reinitializing agent...');
+        debouncedInit();
+      }
     }
   });
   ipcMain.handle(IPC.SESSION_DELETE, (_, id: string) => {
@@ -376,7 +415,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       const agent = agentService.getAgent?.();
       const memory = agent?.getMemory?.();
       return { content: memory?.getContent?.() || '' };
-    } catch { return { content: '' }; }
+    } catch (err) {
+      console.warn('[MEMORY_GET] Failed to get memory:', err);
+      return { content: '' };
+    }
   });
 
   ipcMain.handle(IPC.MEMORY_SET, async (_event, content: string) => {
@@ -421,7 +463,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       if (!existsSync(SESSIONS_FILE)) return { sessions: [] };
       const data = readFileSync(SESSIONS_FILE, 'utf-8');
       return { sessions: JSON.parse(data) };
-    } catch { return { sessions: [] }; }
+    } catch (err) {
+      console.warn('[SESSIONS_LOAD] Failed to load sessions:', err);
+      return { sessions: [] };
+    }
   });
 
   // Message persistence per session
@@ -442,7 +487,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       if (!existsSync(filePath)) return { messages: [] };
       const data = readFileSync(filePath, 'utf-8');
       return { messages: JSON.parse(data) };
-    } catch { return { messages: [] }; }
+    } catch (err) {
+      console.warn('[MESSAGES_LOAD] Failed to load messages:', err);
+      return { messages: [] };
+    }
   });
 
   ipcMain.handle(IPC.GIT_INFO, () => {
@@ -463,7 +511,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       const changedFiles = statusOutput ? statusOutput.split('\n').filter(Boolean).length : 0;
 
       return { branch, changedFiles };
-    } catch {
+    } catch (err) {
+      // Git info is optional, just return empty if not a git repo
+      console.debug('[GIT_INFO] Not a git repo or git not available:', err);
       return { branch: '', changedFiles: 0 };
     }
   });
@@ -483,7 +533,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         categories: t.categories || [],
         parameterCount: t.parameters?.function?.parameters?.properties ? Object.keys(t.parameters.function.parameters.properties).length : 0,
       }));
-    } catch { return []; }
+    } catch (err) {
+      console.warn('[TOOLS_LIST] Failed to list tools:', err);
+      return [];
+    }
   });
 
   // === MCP Servers ===
@@ -491,7 +544,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     try {
       if (!existsSync(MCP_SERVERS_FILE)) return [];
       return JSON.parse(readFileSync(MCP_SERVERS_FILE, 'utf-8'));
-    } catch { return []; }
+    } catch (err) {
+      console.warn('[loadMcpServers] Failed to load MCP servers config:', err);
+      return [];
+    }
   }
 
   function saveMcpServers(servers: McpServerConfig[]) {
@@ -502,7 +558,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle(IPC.MCP_SERVERS_ADD, async (_event, server: Omit<McpServerConfig, 'id' | 'enabled'>) => {
     const servers = loadMcpServers();
-    const newServer: McpServerConfig = { ...server, id: Date.now().toString(36), enabled: true };
+    const newServer: McpServerConfig = { ...server, id: generateId(), enabled: true };
     servers.push(newServer);
     saveMcpServers(servers);
     return newServer;
@@ -525,7 +581,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     try {
       if (!existsSync(AUTOMATION_RULES_FILE)) return getDefaultAutomationRules();
       return JSON.parse(readFileSync(AUTOMATION_RULES_FILE, 'utf-8'));
-    } catch { return getDefaultAutomationRules(); }
+    } catch (err) {
+      console.warn('[loadAutomationRules] Failed to load automation rules:', err);
+      return getDefaultAutomationRules();
+    }
   }
 
   function getDefaultAutomationRules(): AutomationRule[] {
@@ -569,7 +628,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     try {
       if (!existsSync(AUTOMATION_EXECUTIONS_FILE)) return [];
       return JSON.parse(readFileSync(AUTOMATION_EXECUTIONS_FILE, 'utf-8'));
-    } catch { return []; }
+    } catch (err) {
+      console.warn('[loadExecutions] Failed to load automation executions:', err);
+      return [];
+    }
   }
 
   function saveExecution(exec: AutomationExecution) {
@@ -620,7 +682,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         const prompt = (rule.action.config as any).prompt;
         await agentService.run(prompt);
         const exec: AutomationExecution = {
-          id: Date.now().toString(36),
+          id: generateId(),
           ruleId: rule.id,
           ruleName: rule.name,
           timestamp: Date.now(),
@@ -634,9 +696,23 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         const config = rule.action.config as any;
         const command = config.command || config.args?.command;
         if (!command) throw new Error('缺少执行命令');
+
+        // Safety: block obviously destructive commands
+        const dangerous = [
+          'rm -rf /', 'rm -rf /*', 'mkfs', 'dd if=', ':(){:|:&};:',
+          'curl | sh', 'curl | bash', 'wget | sh', 'wget | bash',
+          'wget -O- | bash', 'chmod -R 777 /', '> /dev/sda',
+          'mv / ', 'rm -rf ~', 'rm -rf $HOME',
+        ];
+        for (const pattern of dangerous) {
+          if (command.includes(pattern)) {
+            throw new Error(`Blocked dangerous command: ${command}`);
+          }
+        }
+
         const output = execSync(command, { timeout: 30000, encoding: 'utf-8', cwd: getCurrentWorkspace() });
         const exec: AutomationExecution = {
-          id: Date.now().toString(36),
+          id: generateId(),
           ruleId: rule.id,
           ruleName: rule.name,
           timestamp: Date.now(),
@@ -650,7 +726,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       return { success: false, error: '不支持的动作类型' };
     } catch (e) {
       const exec: AutomationExecution = {
-        id: Date.now().toString(36),
+        id: generateId(),
         ruleId: rule.id,
         ruleName: rule.name,
         timestamp: Date.now(),
