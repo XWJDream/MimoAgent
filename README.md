@@ -47,8 +47,8 @@ MiMo 提供两种 API 端点，根据你的计费方式选择：
 
 - **AI 对话** — 基于 MiMo v2.5 Pro 模型，支持上下文理解与多轮对话
 - **代码工具** — 文件读写、Shell 执行、Git 操作、Web 抓取等，Agent 自主调用
-- **MCP 插件** — Model Context Protocol 扩展，自由添加第三方工具
-- **自动化规则** — 文件变更监听、定时任务、手动触发
+- **MCP 插件** — Model Context Protocol 扩展，自由添加第三方工具（实验性）
+- **自动化规则** — 文件变更监听、定时任务、手动触发（实验性）
 - **TTS 语音合成** — 9 种音色、语速调节、思考强度控制
 
 ### v0.2.0 新增
@@ -68,6 +68,9 @@ MiMo 提供两种 API 端点，根据你的计费方式选择：
 - **会话持久化** — 重启应用后自动恢复对话历史
 - **API 验证** — 启动时自动检测 API Key 有效性，状态栏实时显示
 - **循环检测** — Agent 重复调用相同工具时自动停止
+- **输出校验** — 自动验证工具参数和执行结果，提供错误警告和建议
+- **自我反思** — 任务完成后自动评估结果质量，必要时提示重试
+- **权限确认 GUI** — 原生对话框确认高风险操作
 
 ### 内置工具
 
@@ -84,6 +87,55 @@ MiMo 提供两种 API 端点，根据你的计费方式选择：
 | `git_commit` | 提交代码 | ❌ |
 | `git_checkpoint` | 创建检查点 | ✅ |
 | `task_*` | 任务管理 | ✅ |
+
+---
+
+## 测试
+
+项目包含完整的单元测试套件，确保代码质量和稳定性。
+
+### 测试覆盖率
+
+| 模块 | 测试文件 | 测试用例 | 覆盖率 |
+|------|----------|----------|--------|
+| 权限检查器 | `checker.test.ts` | 17 | ~80% |
+| 使用量追踪器 | `usage-tracker.test.ts` | 19 | ~80% |
+| 文件缓存 | `file-cache.test.ts` | 15 | ~70% |
+| 项目记忆 | `memory.test.ts` | 12 | ~70% |
+| LLM 客户端 | `client.test.ts` | 8 | ~60% |
+| 流式处理 | `streaming.test.ts` | 19 | ~80% |
+| 重试逻辑 | `retry.test.ts` | 10 | ~70% |
+| 输出校验 | `validator.test.ts` | 22 | ~90% |
+| Shell 工具 | `shell.test.ts` | 24 | ~90% |
+| 文件工具 | `read/write/edit-file.test.ts` | 52 | ~90% |
+| 搜索工具 | `glob/grep.test.ts` | 32 | ~85% |
+| 网页抓取 | `web-fetch.test.ts` | 24 | ~80% |
+| 进程执行 | `process.test.ts` | 16 | ~70% |
+| 配置管理 | `configStore.test.ts` | 19 | ~60% |
+| 会话管理 | `sessionStore.test.ts` | 17 | ~70% |
+| 子代理 | `sub-agent.test.ts` | 5 | ~60% |
+| Agent 循环 | `agent-loop.test.ts` | 8 | ~50% |
+
+**总计：28 个测试文件，327 个测试用例，总体覆盖率约 70%**
+
+### 运行测试
+
+```bash
+# 运行所有测试
+npm test
+
+# 运行引擎测试
+npm run test:engine
+
+# 运行主进程测试
+npm run test:main
+
+# 运行渲染进程测试
+npm run test:renderer
+
+# 运行实时 API 测试（需要 API Key）
+MIMO_LIVE_TESTS=1 MIMO_API_KEY=your-key npm run test:live
+```
 
 ---
 
@@ -119,8 +171,10 @@ npm run start:dev
 |------|------|
 | `npm run start:dev` | 启动 Vite + Electron 开发模式 |
 | `npm run build` | 完整构建（engine + main + preload + renderer） |
-| `npx electron-builder --win` | 打包 Windows 安装包 |
-| `npm --prefix engine run dev -- "prompt"` | 直接运行 Agent CLI |
+| `npm run package:win` | 打包 Windows 安装包 |
+| `npm test` | 运行所有测试 |
+| `npm run lint` | 代码检查 |
+| `npm run typecheck` | 类型检查 |
 
 ### 项目结构
 
@@ -136,7 +190,7 @@ MimoAgent/
 │   └── shared/         # 共享类型与 IPC 通道
 ├── engine/             # Agent 引擎（独立 npm 包）
 │   └── src/
-│       ├── core/       # Agent 循环、子 Agent、Hook 系统
+│       ├── core/       # Agent 循环、子 Agent、Hook 系统、校验器
 │       ├── tools/      # 内置工具（文件、Shell、Git、Web）
 │       ├── permissions/# 权限检查（路径级规则）
 │       ├── context/    # System Prompt、上下文压缩、使用统计
@@ -156,6 +210,7 @@ MimoAgent/
 | 构建 | Vite 6 |
 | 样式 | Tailwind CSS 4 + CSS Variables |
 | 状态管理 | Zustand 5 |
+| 测试 | Vitest 4 |
 | LLM 客户端 | OpenAI SDK（兼容 MiMo API） |
 | Markdown | marked + DOMPurify |
 | 图标 | lucide-react |
@@ -191,6 +246,17 @@ MimoAgent/
 | `**/.env*` | 写入/编辑/Shell | 需确认 |
 | `**/.git/**` | 写入/编辑/Shell | 禁止 |
 | `**/node_modules/**` | 写入/编辑/Shell | 禁止 |
+
+---
+
+## 安全特性
+
+- **API Key 保护** — 不存储明文，前端脱敏显示
+- **路径级权限** — 敏感文件操作需确认
+- **命令注入防护** — 危险命令自动拦截
+- **XSS 防护** — HTML 内容使用 DOMPurify 消毒
+- **内存泄漏防护** — TTS 音频自动清理
+- **循环检测** — 防止 Agent 无限循环
 
 ---
 

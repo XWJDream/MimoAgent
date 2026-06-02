@@ -5,6 +5,7 @@ import { StreamCollector } from '../llm/streaming.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { PermissionChecker } from '../permissions/checker.js';
 import type { ToolResult } from '../tools/base.js';
+import { createValidator, type ValidationOptions, type ValidationResult } from './validator.js';
 
 export interface AgentHooks {
   beforeTool?: (name: string, args: Record<string, unknown>) => Promise<{ skip?: boolean; modifiedArgs?: Record<string, unknown> } | void>;
@@ -15,6 +16,8 @@ export type LoopEvent =
   | { type: 'text'; content: string }
   | { type: 'tool_start'; name: string; args: Record<string, unknown> }
   | { type: 'tool_result'; name: string; result: ToolResult }
+  | { type: 'validation'; tool: string; result: ValidationResult }
+  | { type: 'reflection'; prompt: string }
   | { type: 'done'; usage?: { prompt: number; completion: number; total: number } }
   | { type: 'error'; message: string };
 
@@ -27,6 +30,7 @@ export interface AgentLoopOptions {
   onToolResult?: (name: string, result: ToolResult) => void;
   onUsage?: (promptTokens: number, completionTokens: number, cachedTokens?: number) => void;
   hooks?: AgentHooks;
+  validation?: ValidationOptions;
 }
 
 export async function* agentLoop(
@@ -40,6 +44,8 @@ export async function* agentLoop(
   const MAX_TURNS = Math.min(options.maxTurns, 100); // Safety cap at 100
   let turnCount = 0;
   const recentToolCalls: string[] = []; // For loop detection
+  const validator = createValidator(options.validation);
+  const toolResults: Array<{ tool: string; result: ToolResult }> = [];
 
   while (turnCount < MAX_TURNS) {
     if (options.abortSignal?.aborted) {
@@ -151,6 +157,28 @@ export async function* agentLoop(
         }
       }
 
+      // Validate tool arguments before execution
+      const argsValidation = validator.validateToolArgs(toolCall.name, toolCall.arguments);
+      if (!argsValidation.valid) {
+        const errorResult: ToolResult = {
+          output: `Validation failed: ${argsValidation.errors.join(', ')}`,
+          isError: true,
+        };
+        messages.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: JSON.stringify(errorResult),
+        });
+        yield { type: 'validation', tool: toolCall.name, result: argsValidation };
+        yield { type: 'tool_result', name: toolCall.name, result: errorResult };
+        continue;
+      }
+
+      // Emit warnings if any
+      if (argsValidation.warnings.length > 0) {
+        yield { type: 'validation', tool: toolCall.name, result: argsValidation };
+      }
+
       options.onToolStart?.(toolCall.name, toolCall.arguments);
       yield { type: 'tool_start', name: toolCall.name, args: toolCall.arguments };
 
@@ -183,6 +211,17 @@ export async function* agentLoop(
         }
       }
 
+      // Validate tool result
+      const resultValidation = validator.validateToolResult(toolCall.name, result);
+      if (!resultValidation.valid) {
+        yield { type: 'validation', tool: toolCall.name, result: resultValidation };
+      } else if (resultValidation.warnings.length > 0) {
+        yield { type: 'validation', tool: toolCall.name, result: resultValidation };
+      }
+
+      // Track results for reflection
+      toolResults.push({ tool: toolCall.name, result });
+
       options.onToolResult?.(toolCall.name, result);
 
       messages.push({
@@ -192,6 +231,14 @@ export async function* agentLoop(
       });
 
       yield { type: 'tool_result', name: toolCall.name, result };
+    }
+  }
+
+  // Generate reflection if there were errors or warnings
+  if (toolResults.length > 0) {
+    const reflectionPrompt = validator.generateReflectionPrompt('', toolResults);
+    if (reflectionPrompt) {
+      yield { type: 'reflection', prompt: reflectionPrompt };
     }
   }
 
