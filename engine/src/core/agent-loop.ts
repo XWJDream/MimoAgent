@@ -232,13 +232,23 @@ export async function* agentLoop(
 
       yield { type: 'tool_result', name: toolCall.name, result };
     }
-  }
 
-  // Generate reflection if there were errors or warnings
-  if (toolResults.length > 0) {
-    const reflectionPrompt = validator.generateReflectionPrompt('', toolResults);
-    if (reflectionPrompt) {
-      yield { type: 'reflection', prompt: reflectionPrompt };
+    // After processing all tool calls, check if reflection is needed
+    // If there were errors, append reflection prompt and continue the loop
+    if (toolResults.length > 0) {
+      const reflectionPrompt = validator.generateReflectionPrompt('', toolResults);
+      if (reflectionPrompt) {
+        yield { type: 'reflection', prompt: reflectionPrompt };
+        // Append reflection as a system message to guide the next turn
+        messages.push({
+          role: 'system',
+          content: reflectionPrompt,
+        });
+        // Clear tool results for next iteration
+        toolResults.length = 0;
+        // Continue to next iteration - don't exit
+        continue;
+      }
     }
   }
 

@@ -94,14 +94,27 @@ function extractFilePath(_toolName: string, args: Record<string, unknown>): stri
   return null;
 }
 
+/** External permission prompt function type */
+export type PermissionPromptFn = (request: PermissionRequest) => Promise<PermissionResult>;
+
 export class PermissionChecker {
   private mode: PermissionMode;
   private sessionOverrides: Map<string, boolean> = new Map();
   private userRules: PathPermissionRule[] = [];
+  private externalPromptFn: PermissionPromptFn | null = null;
 
-  constructor(mode: PermissionMode, userRules?: PathPermissionRule[]) {
+  constructor(mode: PermissionMode, userRules?: PathPermissionRule[], promptFn?: PermissionPromptFn) {
     this.mode = mode;
     this.userRules = userRules || [];
+    this.externalPromptFn = promptFn || null;
+  }
+
+  /**
+   * Set an external prompt function for permission requests.
+   * This allows Electron GUI to handle permission dialogs instead of TTY prompts.
+   */
+  setPromptFn(fn: PermissionPromptFn): void {
+    this.externalPromptFn = fn;
   }
 
   setMode(mode: PermissionMode): void {
@@ -175,8 +188,17 @@ export class PermissionChecker {
   }
 
   private async promptUser(request: PermissionRequest): Promise<PermissionResult> {
-    // In a real implementation, this would use inquirer
-    // For now, auto-allow in non-interactive mode
+    // Use external prompt function if available (e.g., Electron GUI)
+    if (this.externalPromptFn) {
+      const result = await this.externalPromptFn(request);
+      if (result.allowed) {
+        const key = `${request.toolName}:${JSON.stringify(request.args)}`;
+        this.sessionOverrides.set(key, true);
+      }
+      return result;
+    }
+
+    // In non-interactive mode (non-TTY), auto-allow
     if (!process.stdin.isTTY) {
       return { allowed: true };
     }
