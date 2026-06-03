@@ -252,5 +252,13 @@ export async function* agentLoop(
     }
   }
 
+  // Generate reflection if there were errors or warnings
+  if (toolResults.length > 0) {
+    const reflectionPrompt = validator.generateReflectionPrompt('', toolResults);
+    if (reflectionPrompt) {
+      yield { type: 'reflection', prompt: reflectionPrompt };
+    }
+  }
+
   yield { type: 'error', message: `Max turns (${options.maxTurns}) exceeded` };
 }
