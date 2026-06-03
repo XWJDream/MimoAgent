@@ -252,11 +252,13 @@ export async function* agentLoop(
     }
   }
 
-  // Generate reflection if there were errors or warnings
+  // Generate final reflection if there were errors or warnings at max turns
   if (toolResults.length > 0) {
     const reflectionPrompt = validator.generateReflectionPrompt('', toolResults);
     if (reflectionPrompt) {
       yield { type: 'reflection', prompt: reflectionPrompt };
+      // Note: We don't append to messages here because we're at max turns
+      // The reflection is emitted for the user to see
     }
   }
 
