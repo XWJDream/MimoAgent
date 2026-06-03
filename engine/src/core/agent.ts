@@ -170,6 +170,10 @@ export class Agent {
     return this.toolRegistry;
   }
 
+  getPermissionChecker(): PermissionChecker | null {
+    return this.permissionChecker;
+  }
+
   getUsageTracker(): UsageTracker {
     return this.usageTracker;
   }

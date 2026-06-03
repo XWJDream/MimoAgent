@@ -1,8 +1,27 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
 import { IPC } from '../shared/ipc-channels.js';
 import type { AppConfig } from '../shared/types.js';
+
+/** Permission request from engine */
+interface PermissionRequest {
+  toolName: string;
+  args: Record<string, unknown>;
+  riskLevel: string;
+  description: string;
+}
+
+/** Permission result */
+interface PermissionResult {
+  allowed: boolean;
+  reason?: string;
+}
+
+/** Permission checker interface */
+interface PermissionChecker {
+  setPromptFn(fn: (request: PermissionRequest) => Promise<PermissionResult>): void;
+}
 
 /** Agent instance interface - matches engine/src/core/agent.ts Agent class */
 interface AgentInstance {
@@ -11,6 +30,7 @@ interface AgentInstance {
   clearConversation(): void;
   getUsageTracker(): UsageTracker;
   getToolRegistry(): ToolRegistry;
+  getPermissionChecker(): PermissionChecker | null;
   getConversation(): unknown[];
   setConversation(messages: unknown[]): void;
   getMemory(): ProjectMemory;
@@ -163,6 +183,29 @@ export class AgentService {
     this.agent = new AgentClass(agentConfig, ws);
     console.log('[AgentService] Agent created, initializing...');
     await this.agent.initialize();
+
+    // Set up permission prompt to use Electron native dialog
+    const permissionChecker = this.agent.getPermissionChecker();
+    if (permissionChecker && this.mainWindow) {
+      permissionChecker.setPromptFn(async (request: PermissionRequest) => {
+        const window = this.mainWindow;
+        if (!window) return { allowed: true };
+
+        const result = await dialog.showMessageBox(window, {
+          type: 'question',
+          buttons: ['允许', '拒绝'],
+          defaultId: 1,
+          title: '权限请求',
+          message: `是否允许执行操作？`,
+          detail: `工具: ${request.toolName}\n风险级别: ${request.riskLevel}\n\n${request.description}`,
+          cancelId: 1,
+          noLink: true,
+        });
+
+        return { allowed: result.response === 0 };
+      });
+    }
+
     this.currentConfig = { ...config };
     console.log('[AgentService] Agent initialized successfully');
   }
