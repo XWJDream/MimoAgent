@@ -155,6 +155,11 @@ export function InputArea() {
     const unsubToolResult = api.agent.onToolResult((result) => {
       finishToolCall(result);
     });
+    const unsubThinking = api.agent.onThinking(() => {
+      // Ensure streaming mode is activated for automation-triggered runs
+      setStreaming(true);
+      setThinking(true);
+    });
 
     return () => {
       unsubToken();
@@ -162,8 +167,9 @@ export function InputArea() {
       unsubError();
       unsubToolStart();
       unsubToolResult();
+      unsubThinking();
     };
-  }, [appendToken, finishResponse, setThinking, failResponse, addToolCall, finishToolCall]);
+  }, [appendToken, finishResponse, setThinking, setStreaming, failResponse, addToolCall, finishToolCall]);
 
   return (
     <div
