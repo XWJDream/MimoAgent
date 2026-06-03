@@ -680,6 +680,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     try {
       if (rule.action.type === 'run-prompt') {
         const prompt = (rule.action.config as any).prompt;
+
+        // Notify frontend to start streaming mode before running agent
+        mainWindow.webContents.send(IPC.AGENT_THINKING);
+
         await agentService.run(prompt);
         const exec: AutomationExecution = {
           id: generateId(),
