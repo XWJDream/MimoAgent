@@ -12,6 +12,7 @@ const emptyUsage: UsageStats = {
   totalTokens: 0,
   totalCost: 0,
   totalToolCalls: 0,
+  currentPromptTokens: 0,
 };
 
 beforeEach(() => {

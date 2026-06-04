@@ -180,7 +180,8 @@ button { color: inherit; }
   border-right: 1px solid var(--border-subtle);
   background: var(--bg-sidebar);
   padding: 20px 16px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .codex-sidebar-header {

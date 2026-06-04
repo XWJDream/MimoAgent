@@ -18,6 +18,7 @@ beforeEach(() => {
       theme: 'dark',
       selectedAvatarId: 'default',
       sandboxEnabled: false,
+      reasoningEffort: 'medium',
     },
     apiStatus: 'valid',
     apiError: null,
@@ -44,6 +45,7 @@ beforeEach(() => {
       totalTokens: 1000,
       totalCost: 0.02,
       totalToolCalls: 2,
+      currentPromptTokens: 600,
     },
   });
 });

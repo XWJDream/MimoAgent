@@ -10,6 +10,7 @@ export interface LLMClientConfig {
   maxTokens: number;
   temperature: number;
   timeout: number;
+  reasoningEffort?: 'low' | 'medium' | 'high';
 }
 
 export class LLMClient {
@@ -26,12 +27,17 @@ export class LLMClient {
   }
 
   async chat(messages: ChatMessage[], tools?: ChatCompletionTool[], signal?: AbortSignal): Promise<ChatResponse> {
-    const params: OpenAI.ChatCompletionCreateParams = {
+    const params: any = {
       model: this.config.model,
       messages: this.toOpenAIMessages(messages),
       max_tokens: this.config.maxTokens,
       temperature: this.config.temperature,
     };
+
+    // Add reasoning effort if configured
+    if (this.config.reasoningEffort) {
+      params.reasoning_effort = this.config.reasoningEffort;
+    }
 
     if (tools && tools.length > 0) {
       params.tools = tools;
@@ -54,26 +60,43 @@ export class LLMClient {
     tools?: ChatCompletionTool[],
     signal?: AbortSignal,
   ): AsyncGenerator<StreamEvent> {
-    const params: OpenAI.ChatCompletionCreateParams = {
+    const params: any = {
       model: this.config.model,
       messages: this.toOpenAIMessages(messages),
       max_tokens: this.config.maxTokens,
       temperature: this.config.temperature,
       stream: true,
+      stream_options: { include_usage: true },
     };
+
+    // Add reasoning effort if configured
+    if (this.config.reasoningEffort) {
+      params.reasoning_effort = this.config.reasoningEffort;
+    }
 
     if (tools && tools.length > 0) {
       params.tools = tools;
       params.tool_choice = 'auto';
     }
 
-    const stream = await withRetry(() => this.client.chat.completions.create(params, { signal }));
+    const stream = await withRetry(() => this.client.chat.completions.create(params as any, { signal })) as unknown as AsyncIterable<any>;
 
     for await (const chunk of stream) {
       if (signal?.aborted) {
         throw new DOMException('Agent run was stopped', 'AbortError');
       }
-      const delta = chunk.choices[0]?.delta;
+
+      // The final chunk with stream_options.include_usage has choices=[] but usage at top level
+      // Always yield usage data when present, even if delta is empty
+      if (chunk.usage) {
+        yield {
+          type: 'finish',
+          reason: chunk.choices?.[0]?.finish_reason || 'stop',
+          usage: this.parseUsage(chunk.usage),
+        };
+      }
+
+      const delta = chunk.choices?.[0]?.delta;
       if (!delta) continue;
 
       if (delta.content) {
@@ -100,11 +123,12 @@ export class LLMClient {
         }
       }
 
-      if (chunk.choices[0]?.finish_reason) {
+      // Also yield finish for non-usage chunks with finish_reason
+      if (chunk.choices?.[0]?.finish_reason && !chunk.usage) {
         yield {
           type: 'finish',
           reason: chunk.choices[0].finish_reason,
-          usage: chunk.usage ? this.parseUsage(chunk.usage) : undefined,
+          usage: undefined,
         };
       }
     }

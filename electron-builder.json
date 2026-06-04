@@ -7,6 +7,11 @@
   "files": [
     "dist/**/*",
     "engine/dist/**/*",
+    "!dist/**/*.test.*",
+    "!dist/**/*.map",
+    "!engine/dist/**/*.test.*",
+    "!engine/dist/**/*.live.test.*",
+    "!engine/dist/**/*.map",
     "engine/package.json",
     "resources/icon.png"
   ],

@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { GitCompareArrows, Check, X, RotateCcw, AlertTriangle } from 'lucide-react';
+import { useT } from '../../i18n';
 
 interface DiffLine {
   type: 'add' | 'remove' | 'context';
@@ -56,6 +57,7 @@ function extractFilePath(diff: string): string | null {
 }
 
 export function DiffViewer({ diff, title, onAccept, onReject }: DiffViewerProps) {
+  const t = useT();
   const [status, setStatus] = useState<'pending' | 'accepted' | 'rejected'>('pending');
   const [showConfirm, setShowConfirm] = useState(false);
   const lines = parseDiff(diff);
@@ -85,7 +87,7 @@ export function DiffViewer({ diff, title, onAccept, onReject }: DiffViewerProps)
   }, []);
 
   const statusColor = status === 'accepted' ? 'var(--success)' : status === 'rejected' ? 'var(--error)' : 'var(--text-muted)';
-  const statusLabel = status === 'accepted' ? '已接受' : status === 'rejected' ? '已拒绝' : '';
+  const statusLabel = status === 'accepted' ? t('diff.accepted') : status === 'rejected' ? t('diff.rejected') : '';
 
   return (
     <div className="rounded-lg overflow-hidden" style={{ background: 'var(--bg-base)', border: '1px solid var(--border-subtle)' }}>
@@ -107,7 +109,7 @@ export function DiffViewer({ diff, title, onAccept, onReject }: DiffViewerProps)
               onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
             >
               <X size={12} strokeWidth={2} />
-              拒绝
+              {t('diff.reject')}
             </button>
             <button
               onClick={handleAccept}
@@ -117,7 +119,7 @@ export function DiffViewer({ diff, title, onAccept, onReject }: DiffViewerProps)
               onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(16,163,127,0.08)'; }}
             >
               <Check size={12} strokeWidth={2} />
-              接受
+              {t('diff.accept')}
             </button>
           </div>
         ) : (
@@ -134,21 +136,21 @@ export function DiffViewer({ diff, title, onAccept, onReject }: DiffViewerProps)
           style={{ background: 'rgba(239,68,68,0.06)', borderBottom: '1px solid var(--border-subtle)' }}>
           <AlertTriangle size={13} style={{ color: 'var(--warning)', flexShrink: 0 }} />
           <span style={{ color: 'var(--text-secondary)', flex: 1 }}>
-            确认拒绝？此操作不会自动撤销文件更改。
+            {t('diff.confirmReject')}
           </span>
           <button
             onClick={handleCancelReject}
             className="px-2 py-0.5 rounded text-[11px]"
             style={{ color: 'var(--text-secondary)', background: 'var(--bg-surface)' }}
           >
-            取消
+            {t('diff.cancel')}
           </button>
           <button
             onClick={handleConfirmReject}
             className="px-2 py-0.5 rounded text-[11px] font-medium"
             style={{ color: 'var(--error)', background: 'rgba(239,68,68,0.12)' }}
           >
-            确认拒绝
+            {t('diff.confirmRejectAction')}
           </button>
         </div>
       )}

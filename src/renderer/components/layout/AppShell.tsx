@@ -8,10 +8,13 @@ import { WorkspacePanel } from '../workspace/WorkspacePanel';
 import { PluginPanel } from '../plugins/PluginPanel';
 import { AutomationPanel } from '../automation/AutomationPanel';
 import { TtsPanel } from '../tts/TtsPanel';
+import { SkillPanel } from '../skills/SkillPanel';
+import { ConsolePanel } from '../console/ConsolePanel';
+import { SupervisorPanel } from '../supervisor/SupervisorPanel';
 import { CommandPalette } from '../common/CommandPalette';
 import { useChatStore } from '../../stores/chatStore';
 
-type ViewMode = 'chat' | 'workspace' | 'plugins' | 'automation' | 'tts';
+type ViewMode = 'chat' | 'workspace' | 'plugins' | 'automation' | 'tts' | 'skills' | 'console' | 'supervisor';
 
 const VIEW_KEYS: Record<string, ViewMode> = {
   '1': 'chat',
@@ -19,6 +22,9 @@ const VIEW_KEYS: Record<string, ViewMode> = {
   '3': 'plugins',
   '4': 'automation',
   '5': 'tts',
+  '6': 'skills',
+  '7': 'console',
+  '8': 'supervisor',
 };
 
 export function AppShell() {
@@ -27,7 +33,7 @@ export function AppShell() {
   const [currentView, setCurrentView] = useState<ViewMode>('chat');
   const [paletteOpen, setPaletteOpen] = useState(false);
   const mountedRef = useRef<Record<ViewMode, boolean>>({
-    chat: true, workspace: false, plugins: false, automation: false, tts: false,
+    chat: true, workspace: false, plugins: false, automation: false, tts: false, skills: false, console: false, supervisor: false,
   });
   const clearMessages = useChatStore((s) => s.clearMessages);
 
@@ -154,6 +160,25 @@ export function AppShell() {
           style={{ display: currentView === 'tts' ? undefined : 'none', background: 'var(--bg-workspace)' }}
         >
           {mountedRef.current.tts && <TtsPanel onClose={() => setCurrentView('chat')} />}
+        </div>
+        <div
+          className="flex-1 overflow-auto"
+          style={{ display: currentView === 'skills' ? undefined : 'none', background: 'var(--bg-workspace)' }}
+        >
+          {mountedRef.current.skills && <SkillPanel />}
+        </div>
+        <div
+          className="flex-1 overflow-auto"
+          style={{ display: currentView === 'console' ? undefined : 'none', background: 'var(--bg-workspace)' }}
+        >
+          {mountedRef.current.console && <ConsolePanel />}
+        </div>
+        {/* Collaboration is now shown in the sidebar as AgentCollabSidebar */}
+        <div
+          className="flex-1 overflow-auto"
+          style={{ display: currentView === 'supervisor' ? undefined : 'none', background: 'var(--bg-workspace)' }}
+        >
+          {mountedRef.current.supervisor && <SupervisorPanel />}
         </div>
         <main
           className="flex min-w-0 flex-1 flex-col overflow-hidden"

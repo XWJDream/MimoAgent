@@ -28,6 +28,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     theme: 'dark',
     selectedAvatarId: 'default',
     sandboxEnabled: false,
+    reasoningEffort: 'medium',
   },
   apiStatus: 'unknown',
   apiError: null,

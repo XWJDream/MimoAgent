@@ -4,6 +4,12 @@ dist/
 engine/dist/
 release/
 out/
+src/**/*.js
+src/**/*.d.ts
+src/**/*.map
+engine/src/**/*.js
+engine/src/**/*.d.ts
+engine/src/**/*.map
 
 .env
 .env.*

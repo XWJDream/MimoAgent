@@ -5,6 +5,7 @@ import type { Message } from '@shared/types';
 import { highlightCode } from '../../lib/highlighter';
 import { useChatStore } from '../../stores/chatStore';
 import { Pencil, RotateCcw, Copy, Check } from 'lucide-react';
+import { useT, t } from '../../i18n';
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -19,6 +20,7 @@ interface MessageBubbleProps {
 }
 
 export function MessageBubble({ message, isStreaming, onResend }: MessageBubbleProps) {
+  const t = useT();
   const isUser = message.role === 'user';
   const isTool = message.role === 'tool';
   const isSystem = message.role === 'system';
@@ -82,7 +84,7 @@ export function MessageBubble({ message, isStreaming, onResend }: MessageBubbleP
       const btn = document.createElement('button');
       btn.className = 'code-copy-btn';
       btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
-      btn.title = '复制代码';
+      btn.title = t('chat.copyCode');
       btn.onclick = () => {
         navigator.clipboard.writeText(code).then(() => {
           btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
@@ -122,7 +124,7 @@ export function MessageBubble({ message, isStreaming, onResend }: MessageBubbleP
       <article className="message-row">
         <div className="min-w-0 flex-1">
           <div className="mb-1">
-            <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Tool Result</span>
+            <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{t('chat.toolResult')}</span>
           </div>
           <div className="message-body panel">
             <pre className="font-mono text-xs whitespace-pre-wrap break-words leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
@@ -149,8 +151,8 @@ export function MessageBubble({ message, isStreaming, onResend }: MessageBubbleP
                 autoFocus
               />
               <div className="flex gap-2 mt-1 justify-end">
-                <button onClick={() => setEditing(false)} className="text-[11px] px-2 py-0.5 rounded" style={{ color: 'var(--text-muted)' }}>取消</button>
-                <button onClick={handleEdit} className="text-[11px] px-2 py-0.5 rounded text-white" style={{ background: 'var(--accent)' }}>发送</button>
+                <button onClick={() => setEditing(false)} className="text-[11px] px-2 py-0.5 rounded" style={{ color: 'var(--text-muted)' }}>{t('common.cancel')}</button>
+                <button onClick={handleEdit} className="text-[11px] px-2 py-0.5 rounded text-white" style={{ background: 'var(--accent)' }}>{t('chat.send')}</button>
               </div>
             </div>
           ) : (
@@ -161,14 +163,14 @@ export function MessageBubble({ message, isStreaming, onResend }: MessageBubbleP
                   <button
                     onClick={handleCopy}
                     className={`msg-action-btn ${copied ? 'copied' : ''}`}
-                    title="复制"
+                    title={t('common.copy')}
                   >
                     {copied ? <Check size={12} /> : <Copy size={12} />}
                   </button>
                   <button
                     onClick={handleEdit}
                     className="msg-action-btn"
-                    title="编辑并重新发送"
+                    title={t('chat.editAndResend')}
                   >
                     <Pencil size={12} />
                   </button>
@@ -202,14 +204,14 @@ export function MessageBubble({ message, isStreaming, onResend }: MessageBubbleP
               <button
                 onClick={handleCopy}
                 className={`msg-action-btn ${copied ? 'copied' : ''}`}
-                title="复制"
+                title={t('common.copy')}
               >
                 {copied ? <Check size={11} /> : <Copy size={11} />}
               </button>
               <button
                 onClick={handleRegenerate}
                 className="msg-action-btn"
-                title="重新生成"
+                title={t('chat.regenerate')}
               >
                 <RotateCcw size={11} />
               </button>
@@ -228,7 +230,7 @@ export function MessageBubble({ message, isStreaming, onResend }: MessageBubbleP
           {message.usage && message.usage.tokens > 0 && (
             <div className="mt-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
               {message.usage.tokens.toLocaleString()} tokens
-              {message.usage.cachedTokens ? ` · 缓存命中 ${message.usage.cachedTokens.toLocaleString()}` : ''}
+              {message.usage.cachedTokens ? ` · ${t('chat.cacheHit')} ${message.usage.cachedTokens.toLocaleString()}` : ''}
             </div>
           )}
           <div className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>{formatTime(message.timestamp)}</div>

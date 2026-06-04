@@ -4,7 +4,11 @@ on:
   push:
     branches: [dev, master]
   pull_request:
-    branches: [dev]
+    branches: [dev, master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -17,32 +21,57 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
         run: |
-          npm install
-          cd engine && npm install && cd ..
+          npm ci
+          npm --prefix engine ci
 
-      - name: Build
-        run: npm run build
-
-      - name: Verify no secrets in build
+      - name: Verify no secrets in source
         shell: bash
         run: |
           echo "Checking for API keys..."
-          # Check source files only, skip node_modules and bundled assets
-          if grep -RIE "sk-[a-zA-Z0-9]{20,}" --include="*.ts" --include="*.tsx" --include="*.json" --include="*.env*" src/ engine/src/ 2>/dev/null; then
-            echo "ERROR: API key found in source!"
+          matches="$(grep -RIlE "sk-[a-zA-Z0-9]{20,}" \
+            --include="*.ts" \
+            --include="*.tsx" \
+            --include="*.js" \
+            --include="*.json" \
+            --include="*.yml" \
+            --include="*.yaml" \
+            --include="*.env*" \
+            src/ engine/src/ scripts/ 2>/dev/null || true)"
+          if [ -n "$matches" ]; then
+            echo "ERROR: Potential API key found in source files:"
+            echo "$matches"
             exit 1
           fi
           echo "No secrets found"
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
       - name: Upload build artifacts
-        if: github.ref == 'refs/heads/dev'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-output
-          path: dist/
+          path: |
+            dist/
+            !dist/**/*.test.*
+            !dist/**/*.map
+            engine/dist/
+            !engine/dist/**/*.test.*
+            !engine/dist/**/*.live.test.*
+            !engine/dist/**/*.map
           retention-days: 7

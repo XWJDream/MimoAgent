@@ -3,6 +3,7 @@ import { useConfigStore } from "../../stores/configStore";
 import { ModelSelector } from "./ModelSelector";
 import { PermissionMode } from "./PermissionMode";
 import { Moon, Sun } from "lucide-react";
+import { useT } from "../../i18n";
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
   const { config, setConfig, validateApi } = useConfigStore();
   const [apiKey, setApiKey] = useState("");
   const [apiBase, setApiBase] = useState(config.apiBase);
+  const t = useT();
 
   if (!isOpen) return null;
 
@@ -153,13 +155,13 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               className="text-xl font-semibold tracking-wide"
               style={{ color: "var(--text-primary)" }}
             >
-              设置
+              {t('settings.title')}
             </h2>
             <p
               className="text-sm mt-1"
               style={{ color: "var(--text-muted)", opacity: 0.7 }}
             >
-              配置你的 AI 助手
+              {t('settings.subtitle')}
             </p>
           </div>
         </div>
@@ -174,7 +176,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               className="block text-xs font-semibold uppercase tracking-widest"
               style={{ color: "var(--accent)", opacity: 0.8 }}
             >
-              模型
+              {t('settings.model')}
             </label>
             <ModelSelector />
           </div>
@@ -185,7 +187,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               className="block text-xs font-semibold uppercase tracking-widest"
               style={{ color: "var(--accent)", opacity: 0.8 }}
             >
-              API 地址
+              {t('settings.apiBase')}
             </label>
             <input
               type="text"
@@ -207,7 +209,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               className="block text-xs font-semibold uppercase tracking-widest"
               style={{ color: "var(--accent)", opacity: 0.8 }}
             >
-              API 密钥
+              {t('settings.apiKey')}
             </label>
             <div className="flex items-center justify-between mb-2">
               <span
@@ -219,8 +221,8 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                 }}
               >
                 {config.apiKeyConfigured
-                  ? `已配置：${config.apiKeyPreview}`
-                  : "未配置"}
+                  ? t('settings.configured', { preview: config.apiKeyPreview ?? '' })
+                  : t('settings.notConfigured')}
               </span>
               {config.apiKeyConfigured && (
                 <button
@@ -237,7 +239,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     e.currentTarget.style.background = "transparent";
                   }}
                 >
-                  清除
+                  {t('settings.clearKey')}
                 </button>
               )}
             </div>
@@ -253,8 +255,8 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               }}
               placeholder={
                 config.apiKeyConfigured
-                  ? "留空则保持当前密钥不变"
-                  : "输入 API Key"
+                  ? t('settings.keepCurrentKey')
+                  : t('settings.enterApiKey')
               }
             />
           </div>
@@ -265,7 +267,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               className="block text-xs font-semibold uppercase tracking-widest"
               style={{ color: "var(--accent)", opacity: 0.8 }}
             >
-              权限模式
+              {t('settings.permissionMode')}
             </label>
             <PermissionMode />
           </div>
@@ -276,13 +278,13 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               className="block text-xs font-semibold uppercase tracking-widest"
               style={{ color: "var(--accent)", opacity: 0.8 }}
             >
-              工具模式
+              {t('settings.toolPreset')}
             </label>
             <div className="grid grid-cols-2 gap-4">
               {(
                 [
-                  ["plan", "分析模式", "仅可读取和搜索，适合代码分析"],
-                  ["act", "操作模式", "完整工具集，可读写和执行"],
+                  ["plan", t('toolPreset.plan'), t('settings.toolPreset.planDesc')],
+                  ["act", t('toolPreset.act'), t('settings.toolPreset.actDesc')],
                 ] as const
               ).map(([value, label, desc]) => (
                 <button
@@ -321,7 +323,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               className="block text-xs font-semibold uppercase tracking-widest"
               style={{ color: "var(--accent)", opacity: 0.8 }}
             >
-              温度{" "}
+              {t('settings.temperature')}{" "}
               <span
                 className="font-normal normal-case tracking-normal opacity-100"
                 style={{ color: "var(--text-muted)" }}
@@ -354,7 +356,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               className="block text-xs font-semibold uppercase tracking-widest"
               style={{ color: "var(--accent)", opacity: 0.8 }}
             >
-              最大轮次
+              {t('settings.maxTurns')}
             </label>
             <input
               type="number"
@@ -379,7 +381,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               className="block text-xs font-semibold uppercase tracking-widest"
               style={{ color: "var(--accent)", opacity: 0.8 }}
             >
-              沙盒模式
+              {t('settings.sandboxMode')}
             </label>
             <button
               type="button"
@@ -401,10 +403,10 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               }}
             >
               <span className="font-semibold">
-                {config.sandboxEnabled ? "已启用" : "已关闭"}
+                {config.sandboxEnabled ? t('settings.enabled') : t('settings.disabled')}
               </span>
               <span className="text-xs opacity-70">
-                需要 Docker，命令在隔离容器中执行
+                {t('settings.sandboxDesc')}
               </span>
             </button>
           </div>
@@ -415,7 +417,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               className="block text-xs font-semibold uppercase tracking-widest"
               style={{ color: "var(--accent)", opacity: 0.8 }}
             >
-              主题
+              {t('settings.theme')}
             </label>
             <div className="grid grid-cols-2 gap-4">
               {(["dark", "light"] as const).map((theme) => (
@@ -440,7 +442,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                 >
                   {theme === "dark" ? <Moon size={18} /> : <Sun size={18} />}
                   <span className="font-semibold">
-                    {theme === "dark" ? "深色" : "浅色"}
+                    {theme === "dark" ? t('settings.dark') : t('settings.light')}
                   </span>
                 </button>
               ))}
@@ -457,14 +459,14 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             className="btn-secondary"
             style={{ padding: "10px 24px" }}
           >
-            取消
+            {t('common.cancel')}
           </button>
           <button
             onClick={handleSave}
             className="btn-primary"
             style={{ padding: "10px 28px" }}
           >
-            保存
+            {t('common.save')}
           </button>
         </div>
       </div>

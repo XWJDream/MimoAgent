@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { X, Plus, Trash2, Power, Server, Wrench, RefreshCw } from 'lucide-react';
 import type { McpServerConfig, ToolInfo } from '../../../shared/types';
+import { useT } from '../../i18n';
 
 interface PluginPanelProps {
   onClose: () => void;
 }
 
 export function PluginPanel({ onClose }: PluginPanelProps) {
+  const t = useT();
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [servers, setServers] = useState<McpServerConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,22 +47,22 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
       setNewServer({ name: '', command: '', args: '' });
       setShowAddServer(false);
       await loadData();
-      setSuccessMsg(`服务器「${newServer.name.trim()}」已添加`);
+      setSuccessMsg(t('plugin.serverAdded', { name: newServer.name.trim() }));
       setTimeout(() => setSuccessMsg(null), 2000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '添加服务器失败');
+      setError(err instanceof Error ? err.message : t('error.addServerFailed'));
     }
   };
 
   const handleRemoveServer = async (id: string) => {
     const server = servers.find((s) => s.id === id);
-    if (!confirm(`确认删除服务器「${server?.name || id}」？`)) return;
+    if (!confirm(t('plugin.confirmDelete', { name: server?.name || id }))) return;
     setError(null);
     try {
       await window.api.mcp.removeServer(id);
       setServers((prev) => prev.filter((s) => s.id !== id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : '删除服务器失败');
+      setError(err instanceof Error ? err.message : t('error.deleteServerFailed'));
     }
   };
 
@@ -70,7 +72,7 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
       await window.api.mcp.toggleServer(id, enabled);
       setServers((prev) => prev.map((s) => (s.id === id ? { ...s, enabled } : s)));
     } catch (err) {
-      setError(err instanceof Error ? err.message : '切换服务器状态失败');
+      setError(err instanceof Error ? err.message : t('error.toggleServerFailed'));
     }
   };
 
@@ -82,12 +84,12 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
       {/* Header */}
       <div className="panel-header">
         <div>
-          <div className="panel-subtitle">插件管理</div>
-          <h1 className="panel-title">插件</h1>
+          <div className="panel-subtitle">{t('plugin.title')}</div>
+          <h1 className="panel-title">{t('plugin.panelTitle')}</h1>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="icon-button" onClick={loadData} title="刷新"><RefreshCw size={15} /></button>
-          <button className="icon-button" onClick={onClose} title="关闭"><X size={16} /></button>
+          <button className="icon-button" onClick={loadData} title={t('common.refresh')}><RefreshCw size={15} /></button>
+          <button className="icon-button" onClick={onClose} title={t('common.close')}><X size={16} /></button>
         </div>
       </div>
 
@@ -101,20 +103,20 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
         <div className="success-banner">{successMsg}</div>
       )}
       {loading ? (
-        <div style={{ color: 'var(--text-muted)', padding: '12px 0', textAlign: 'center' }}>加载中...</div>
+        <div style={{ color: 'var(--text-muted)', padding: '12px 0', textAlign: 'center' }}>{t('common.loading')}</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           {/* Built-in Tools */}
           <div className="workspace-card">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
               <Wrench size={15} style={{ color: 'var(--accent)' }} />
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>内置工具</span>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{builtinTools.length} 个</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{t('plugin.builtinTools')}</span>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{t('plugin.toolCount', { count: builtinTools.length })}</span>
             </div>
             {builtinTools.length === 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '24px 0', color: 'var(--text-muted)' }}>
                 <Wrench size={24} strokeWidth={1.2} style={{ opacity: 0.4 }} />
-                <span style={{ fontSize: 12 }}>暂无内置工具</span>
+                <span style={{ fontSize: 12 }}>{t('plugin.noBuiltinTools')}</span>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -134,8 +136,8 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
             <div className="workspace-card">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
                 <Server size={15} style={{ color: 'var(--accent)' }} />
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>MCP 工具</span>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{mcpTools.length} 个</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{t('plugin.mcpTools')}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{t('plugin.toolCount', { count: mcpTools.length })}</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {mcpTools.map((tool) => (
@@ -152,14 +154,14 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
           <div className="workspace-card">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
               <Server size={15} style={{ color: 'var(--accent)' }} />
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>MCP 服务器</span>
-              <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--warning)', color: 'var(--bg-base)', borderRadius: 4, fontWeight: 500 }}>实验性</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{t('plugin.mcpServers')}</span>
+              <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--warning)', color: 'var(--bg-base)', borderRadius: 4, fontWeight: 500 }}>{t('plugin.experimental')}</span>
               <button
                 className="btn-secondary"
                 onClick={() => setShowAddServer(!showAddServer)}
                 style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 10px' }}
               >
-                <Plus size={13} /> 添加服务器
+                <Plus size={13} /> {t('plugin.addServer')}
               </button>
             </div>
 
@@ -168,28 +170,28 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <input
                     type="text"
-                    placeholder="服务器名称"
+                    placeholder={t('plugin.serverName')}
                     value={newServer.name}
                     onChange={(e) => setNewServer((s) => ({ ...s, name: e.target.value }))}
                     style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none' }}
                   />
                   <input
                     type="text"
-                    placeholder="命令 (如 npx, node)"
+                    placeholder={t('plugin.commandPlaceholder')}
                     value={newServer.command}
                     onChange={(e) => setNewServer((s) => ({ ...s, command: e.target.value }))}
                     style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none' }}
                   />
                   <input
                     type="text"
-                    placeholder="参数 (空格分隔)"
+                    placeholder={t('plugin.argsPlaceholder')}
                     value={newServer.args}
                     onChange={(e) => setNewServer((s) => ({ ...s, args: e.target.value }))}
                     style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text-primary)', outline: 'none' }}
                   />
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                    <button className="btn-secondary" onClick={() => setShowAddServer(false)} style={{ fontSize: 12, padding: '4px 10px' }}>取消</button>
-                    <button className="btn-primary" onClick={handleAddServer} style={{ fontSize: 12, padding: '4px 14px' }}>添加</button>
+                    <button className="btn-secondary" onClick={() => setShowAddServer(false)} style={{ fontSize: 12, padding: '4px 10px' }}>{t('common.cancel')}</button>
+                    <button className="btn-primary" onClick={handleAddServer} style={{ fontSize: 12, padding: '4px 14px' }}>{t('plugin.add')}</button>
                   </div>
                 </div>
               </div>
@@ -198,8 +200,8 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
             {servers.length === 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '24px 0', color: 'var(--text-muted)' }}>
                 <Server size={24} strokeWidth={1.2} style={{ opacity: 0.4 }} />
-                <span style={{ fontSize: 12 }}>暂无 MCP 服务器配置</span>
-                <span style={{ fontSize: 11, opacity: 0.6 }}>点击上方按钮添加服务器</span>
+                <span style={{ fontSize: 12 }}>{t('plugin.noMcpServers')}</span>
+                <span style={{ fontSize: 11, opacity: 0.6 }}>{t('plugin.noMcpServersHint')}</span>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -210,10 +212,10 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
                       <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>{server.name}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{server.command} {server.args.join(' ')}</div>
                     </div>
-                    <button className="icon-button" onClick={() => handleToggleServer(server.id, !server.enabled)} title={server.enabled ? '禁用' : '启用'}>
+                    <button className="icon-button" onClick={() => handleToggleServer(server.id, !server.enabled)} title={server.enabled ? t('plugin.disable') : t('plugin.enable')}>
                       <Power size={13} style={{ color: server.enabled ? 'var(--success)' : 'var(--text-muted)' }} />
                     </button>
-                    <button className="icon-button danger" onClick={() => handleRemoveServer(server.id)} title="删除">
+                    <button className="icon-button danger" onClick={() => handleRemoveServer(server.id)} title={t('common.delete')}>
                       <Trash2 size={13} />
                     </button>
                   </div>

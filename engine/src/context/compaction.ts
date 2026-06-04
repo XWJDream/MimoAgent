@@ -1,5 +1,6 @@
 import type { ChatMessage } from '../llm/types.js';
 import type { LLMClient } from '../llm/client.js';
+import { estimateMessageTokens } from '../llm/tokenizer.js';
 
 export interface CompactionResult {
   messages: ChatMessage[];
@@ -32,38 +33,15 @@ The summary MUST preserve:
 
 Format as structured markdown. Be concise but include specific file paths, function names, and technical details that would be needed to continue the work. Do NOT include conversational filler — only factual technical content.`;
 
-/**
- * Estimate token count from text length.
- * ~4 chars/token for English, ~2 chars/token for CJK.
- */
-function estimateTokens(text: string): number {
-  let count = 0;
-  for (const char of text) {
-    if (/[一-鿿鿿぀-ゟ゠-ヿ]/.test(char)) {
-      count += 0.5;
-    } else {
-      count += 0.25;
-    }
-  }
-  return Math.ceil(count);
-}
-
-function estimateMessageTokens(message: ChatMessage): number {
-  let count = 0;
-  if (message.content) {
-    count += estimateTokens(message.content);
-  }
-  if (message.tool_calls) {
-    for (const tc of message.tool_calls) {
-      count += estimateTokens(tc.name);
-      count += estimateTokens(JSON.stringify(tc.arguments));
-    }
-  }
-  return count + 4; // message overhead
-}
-
 export function estimateConversationTokens(messages: ChatMessage[]): number {
-  return messages.reduce((sum, msg) => sum + estimateMessageTokens(msg), 0);
+  return messages.reduce((sum, msg) => {
+    return sum + estimateMessageTokens(
+      msg.content,
+      msg.role,
+      msg.tool_calls?.map(tc => ({ name: tc.name, arguments: tc.arguments })),
+      msg.tool_call_id,
+    );
+  }, 0);
 }
 
 export function shouldCompact(messages: ChatMessage[], maxTokens: number): boolean {

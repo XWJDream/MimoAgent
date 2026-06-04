@@ -54,6 +54,7 @@ export interface AppConfig {
   toolPreset: 'plan' | 'act';
   maxTurns: number;
   temperature: number;
+  reasoningEffort: 'low' | 'medium' | 'high';
   theme: 'dark' | 'light';
   selectedAvatarId: string;
   sandboxEnabled: boolean;
@@ -127,6 +128,26 @@ export interface UsageStats {
   totalTokens: number;
   totalCost: number;
   totalToolCalls: number;
+  /** Latest turn's prompt tokens (for context window display, not cumulative) */
+  currentPromptTokens: number;
+}
+
+export type SubagentStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface SubagentInfo {
+  id: string;
+  name: string;
+  prompt: string;
+  status: SubagentStatus;
+  toolCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalCost: number;
+  latestToolCall?: string;
+  result?: string;
+  error?: string;
+  startTime?: number;
+  endTime?: number;
 }
 
 export interface PermissionRequest {

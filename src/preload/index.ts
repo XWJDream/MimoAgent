@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-// Keep in sync with src/shared/ipc-channels.ts
+// Local IPC constants (synced with src/shared/ipc-channels.ts)
+// Note: Cannot import from shared because preload uses CommonJS (tsconfig.preload.json)
+// which would overwrite the ESM-compiled shared files in dist/
 const IPC = {
   AGENT_RUN: 'agent:run',
   AGENT_STOP: 'agent:stop',
@@ -11,14 +13,11 @@ const IPC = {
   AGENT_DONE: 'agent:done',
   AGENT_ERROR: 'agent:error',
   AGENT_THINKING: 'agent:thinking',
-
   CONFIG_GET: 'config:get',
   CONFIG_SET: 'config:set',
-
   WORKSPACE_GET: 'workspace:get',
   WORKSPACE_SET: 'workspace:set',
   WORKSPACE_SELECT: 'workspace:select',
-
   SESSION_CREATE: 'session:create',
   SESSION_LIST: 'session:list',
   SESSION_SWITCH: 'session:switch',
@@ -29,32 +28,25 @@ const IPC = {
   SESSIONS_LOAD: 'sessions:load',
   MESSAGES_SAVE: 'messages:save',
   MESSAGES_LOAD: 'messages:load',
-
   FILE_LIST: 'file:list',
   FILE_READ: 'file:read',
   FILE_WRITE: 'file:write',
   FILE_DIALOG: 'file:dialog',
   SHELL_EXEC: 'shell:exec',
-
   WINDOW_MINIMIZE: 'window:minimize',
   WINDOW_MAXIMIZE: 'window:maximize',
   WINDOW_CLOSE: 'window:close',
-
   MEMORY_GET: 'memory:get',
   MEMORY_SET: 'memory:set',
   COMPACT: 'conversation:compact',
   PERMISSION_REQUEST: 'permission:request',
   PERMISSION_RESPONSE: 'permission:response',
-
   GIT_INFO: 'git:info',
-
   TOOLS_LIST: 'tools:list',
-
   MCP_SERVERS_GET: 'mcp:servers:get',
   MCP_SERVERS_ADD: 'mcp:servers:add',
   MCP_SERVERS_REMOVE: 'mcp:servers:remove',
   MCP_SERVERS_TOGGLE: 'mcp:servers:toggle',
-
   AUTOMATION_RULES_GET: 'automation:rules:get',
   AUTOMATION_RULES_ADD: 'automation:rules:add',
   AUTOMATION_RULES_REMOVE: 'automation:rules:remove',
@@ -62,11 +54,16 @@ const IPC = {
   AUTOMATION_RULES_UPDATE: 'automation:rules:update',
   AUTOMATION_EXECUTIONS_GET: 'automation:executions:get',
   AUTOMATION_RUN: 'automation:run',
-
   TTS_GENERATE: 'tts:generate',
   TTS_SAVE: 'tts:save',
-
   API_VALIDATE: 'api:validate',
+  SKILLS_LIST: 'skills:list',
+  SKILLS_MATCH: 'skills:match',
+  SKILLS_ACTIVATE: 'skills:activate',
+  SYSTEM_GET_INFO: 'system:get-info',
+  COLLABORATION_LIST: 'collaboration:list',
+  SUPERVISOR_GET_VIOLATIONS: 'supervisor:get-violations',
+  SUPERVISOR_SET_ENABLED: 'supervisor:set-enabled',
 } as const;
 
 const api = {
@@ -163,7 +160,7 @@ const api = {
 
   // Messages persistence
   messages: {
-    save: (sessionId: string, messages: unknown[]) => ipcRenderer.invoke(IPC.MESSAGES_SAVE, sessionId, messages),
+    save: (sessionId: string, data: unknown) => ipcRenderer.invoke(IPC.MESSAGES_SAVE, sessionId, data),
     load: (sessionId: string) => ipcRenderer.invoke(IPC.MESSAGES_LOAD, sessionId),
   },
 
@@ -207,6 +204,39 @@ const api = {
   // API
   api: {
     validate: () => ipcRenderer.invoke(IPC.API_VALIDATE),
+  },
+
+  // Skills
+  skills: {
+    list: () => ipcRenderer.invoke(IPC.SKILLS_LIST),
+    match: (input: string) => ipcRenderer.invoke(IPC.SKILLS_MATCH, input),
+    activate: (skillId: string) => ipcRenderer.invoke(IPC.SKILLS_ACTIVATE, skillId),
+  },
+
+  // System
+  system: {
+    getInfo: () => ipcRenderer.invoke(IPC.SYSTEM_GET_INFO),
+  },
+
+  // Collaboration
+  collaboration: {
+    list: () => ipcRenderer.invoke(IPC.COLLABORATION_LIST),
+  },
+
+  // Supervisor
+  supervisor: {
+    getViolations: () => ipcRenderer.invoke(IPC.SUPERVISOR_GET_VIOLATIONS),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke(IPC.SUPERVISOR_SET_ENABLED, enabled),
+  },
+
+  // Generic event listeners
+  on: (channel: string, cb: (...args: unknown[]) => void) => {
+    const handler = (_: unknown, ...args: unknown[]) => cb(_, ...args);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
+  off: (channel: string, cb: (...args: unknown[]) => void) => {
+    ipcRenderer.removeListener(channel, cb as any);
   },
 
   // Permission

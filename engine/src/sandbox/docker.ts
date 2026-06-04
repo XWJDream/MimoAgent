@@ -68,7 +68,9 @@ export class DockerSandbox {
         timedOut = true;
         try {
           await container.kill();
-        } catch {}
+        } catch (err) {
+          stderr = err instanceof Error ? err.message : String(err);
+        }
       }, timeout);
 
       container.logs({ follow: true, stdout: true, stderr: true }, (err, stream) => {

@@ -65,4 +65,13 @@ export const IPC = {
   TTS_SAVE: 'tts:save',
 
   API_VALIDATE: 'api:validate',
+
+  SKILLS_LIST: 'skills:list',
+  SKILLS_MATCH: 'skills:match',
+  SKILLS_ACTIVATE: 'skills:activate',
+
+  SYSTEM_GET_INFO: 'system:get-info',
+  COLLABORATION_LIST: 'collaboration:list',
+  SUPERVISOR_GET_VIOLATIONS: 'supervisor:get-violations',
+  SUPERVISOR_SET_ENABLED: 'supervisor:set-enabled',
 } as const;
