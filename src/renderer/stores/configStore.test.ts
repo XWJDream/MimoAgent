@@ -36,6 +36,7 @@ describe('configStore', () => {
         theme: 'dark',
         selectedAvatarId: 'default',
         sandboxEnabled: false,
+        reasoningEffort: 'medium',
       },
       apiStatus: 'unknown',
       apiError: null,

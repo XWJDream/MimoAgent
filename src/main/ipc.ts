@@ -1,5 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
-import { execSync } from 'child_process';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 import { randomBytes } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs';
 import { readdir } from 'fs/promises';
@@ -14,6 +17,7 @@ const SESSIONS_FILE = join(app.getPath('userData'), 'sessions.json');
 const MCP_SERVERS_FILE = join(app.getPath('userData'), 'mcp-servers.json');
 const AUTOMATION_RULES_FILE = join(app.getPath('userData'), 'automation-rules.json');
 const AUTOMATION_EXECUTIONS_FILE = join(app.getPath('userData'), 'automation-executions.json');
+const CONFIG_FILE = join(app.getPath('userData'), 'config.json');
 
 /** Generate a unique ID with timestamp + random suffix to avoid collisions */
 function generateId(): string {
@@ -28,6 +32,7 @@ const configKeys = new Set<keyof AppConfig>([
   'toolPreset',
   'maxTurns',
   'temperature',
+  'reasoningEffort',
   'theme',
   'selectedAvatarId',
   'sandboxEnabled',
@@ -79,6 +84,31 @@ function validateConfigValue(key: keyof AppConfig, value: unknown): AppConfig[ke
     case 'sandboxEnabled':
       if (typeof value !== 'boolean') throw new Error('sandboxEnabled must be a boolean');
       return value;
+    case 'reasoningEffort':
+      if (value !== 'low' && value !== 'medium' && value !== 'high') throw new Error('reasoningEffort must be low, medium, or high');
+      return value;
+    default:
+      throw new Error(`Unknown config key: ${key}`);
+  }
+}
+
+function loadConfig(): Partial<AppConfig> {
+  try {
+    if (existsSync(CONFIG_FILE)) {
+      const data = readFileSync(CONFIG_FILE, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('[Config] Failed to load config:', err);
+  }
+  return {};
+}
+
+function saveConfig(config: AppConfig): void {
+  try {
+    writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('[Config] Failed to save config:', err);
   }
 }
 
@@ -112,10 +142,22 @@ function resolveWorkspacePath(targetPath: string): string {
 function ensureInsideWorkspace(targetPath: string): string {
   const absolute = resolveWorkspacePath(targetPath);
   const root = resolve(getCurrentWorkspace());
+
+  // Normalize both paths for consistent comparison
+  const normalizedAbsolute = absolute.replace(/\\/g, '/').toLowerCase();
+  const normalizedRoot = root.replace(/\\/g, '/').toLowerCase();
+
+  // Check if the absolute path starts with the root path
+  if (!normalizedAbsolute.startsWith(normalizedRoot + '/') && normalizedAbsolute !== normalizedRoot) {
+    throw new Error('Path is outside the active workspace');
+  }
+
+  // Additional check using relative() for edge cases
   const rel = relative(root, absolute);
   if (rel && (rel.startsWith('..') || isAbsolute(rel))) {
     throw new Error('Path is outside the active workspace');
   }
+
   return absolute;
 }
 
@@ -130,11 +172,54 @@ function setWorkspace(path: string): WorkspaceInfo {
     session.workspaceName = basename(absolute);
     session.updatedAt = new Date().toISOString();
   }
+  // Invalidate cache when workspace changes
+  invalidateFileTreeCache();
   return { path: absolute, name: basename(absolute) };
+}
+
+// File tree cache with TTL and mtime-based invalidation
+interface FileTreeCacheEntry {
+  nodes: FileTreeNode[];
+  timestamp: number;
+  dirMTimes: Map<string, number>;
+}
+
+const fileTreeCache = new Map<string, FileTreeCacheEntry>();
+const FILE_TREE_TTL_MS = 5000; // 5 seconds
+
+function isCacheValid(entry: FileTreeCacheEntry, rootPath: string): boolean {
+  // TTL gate
+  if (Date.now() - entry.timestamp > FILE_TREE_TTL_MS) return false;
+  // mtime gate - only stat the root directory
+  try {
+    const currentMtime = statSync(rootPath).mtimeMs;
+    const cachedMtime = entry.dirMTimes.get(rootPath);
+    return currentMtime === cachedMtime;
+  } catch {
+    return false; // directory gone, cache invalid
+  }
+}
+
+function invalidateFileTreeCache(workspacePath?: string): void {
+  if (workspacePath) {
+    fileTreeCache.delete(resolve(workspacePath));
+  } else {
+    fileTreeCache.clear();
+  }
 }
 
 async function listFiles(basePath: string | undefined, depth = 0, seen = { count: 0 }): Promise<FileTreeNode[]> {
   const absoluteBase = basePath ? ensureInsideWorkspace(basePath) : resolve(getCurrentWorkspace());
+
+  // Only cache root-level calls (depth === 0, no explicit basePath)
+  const isRootCall = depth === 0 && !basePath;
+  if (isRootCall) {
+    const cached = fileTreeCache.get(absoluteBase);
+    if (cached && isCacheValid(cached, absoluteBase)) {
+      return cached.nodes;
+    }
+  }
+
   if (depth > maxFileTreeDepth || seen.count >= maxFileTreeEntries) return [];
 
   let entries;
@@ -168,6 +253,19 @@ async function listFiles(basePath: string | undefined, depth = 0, seen = { count
     nodes.push(node);
   }
 
+  // Cache the result for root-level calls
+  if (isRootCall) {
+    const dirMTimes = new Map<string, number>();
+    try {
+      dirMTimes.set(absoluteBase, statSync(absoluteBase).mtimeMs);
+    } catch { /* ignore */ }
+    fileTreeCache.set(absoluteBase, {
+      nodes,
+      timestamp: Date.now(),
+      dirMTimes,
+    });
+  }
+
   return nodes;
 }
 
@@ -184,6 +282,8 @@ function writeWorkspaceFile(path: string, content: string): void {
   const dir = join(absolute, '..');
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   writeFileSync(absolute, content, 'utf8');
+  // Invalidate cache - the written file may be new
+  invalidateFileTreeCache(getCurrentWorkspace());
 }
 
 function getDefaultWorkspace(): string {
@@ -207,12 +307,15 @@ const defaultConfig: AppConfig = {
   toolPreset: 'act',
   maxTurns: 50,
   temperature: 0.2,
+  reasoningEffort: 'medium',
   theme: 'dark',
   selectedAvatarId: 'default',
   sandboxEnabled: false,
 };
 
-let currentConfig: AppConfig = { ...defaultConfig };
+// Load saved config from disk and merge with defaults
+const savedConfig = loadConfig();
+const currentConfig: AppConfig = { ...defaultConfig, ...savedConfig };
 let activeSessionId = 'default';
 const sessions: Session[] = [
   {
@@ -287,7 +390,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (!isConfigKey(key)) throw new Error(`Unknown config key: ${key}`);
     (currentConfig as unknown as Record<string, unknown>)[key] = validateConfigValue(key, value);
 
-    if (['apiKey', 'apiBase', 'model', 'permissionMode', 'toolPreset', 'maxTurns', 'temperature', 'sandboxEnabled'].includes(key)) {
+    // Save config to disk
+    saveConfig(currentConfig);
+
+    if (['apiKey', 'apiBase', 'model', 'permissionMode', 'toolPreset', 'maxTurns', 'temperature', 'sandboxEnabled', 'reasoningEffort'].includes(key)) {
       debouncedInit();
     }
 
@@ -472,10 +578,19 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // Message persistence per session
   const MESSAGES_DIR = join(app.getPath('userData'), 'messages');
 
+  // Sanitize session ID to prevent path traversal
+  function sanitizeSessionId(sessionId: string): string {
+    // Only allow alphanumeric, hyphens, underscores, and dots
+    const sanitized = sessionId.replace(/[^a-zA-Z0-9_.-]/g, '_');
+    // Remove any path separators
+    return sanitized.replace(/\.\./g, '_').replace(/[/\\]/g, '_');
+  }
+
   ipcMain.handle(IPC.MESSAGES_SAVE, async (_event, sessionId: string, messages: unknown[]) => {
     try {
       if (!existsSync(MESSAGES_DIR)) mkdirSync(MESSAGES_DIR, { recursive: true });
-      const filePath = join(MESSAGES_DIR, `${sessionId}.json`);
+      const safeId = sanitizeSessionId(sessionId);
+      const filePath = join(MESSAGES_DIR, `${safeId}.json`);
       writeFileSync(filePath, JSON.stringify(messages, null, 2));
       return { success: true };
     } catch (e) { return { success: false, error: String(e) }; }
@@ -483,7 +598,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle(IPC.MESSAGES_LOAD, async (_event, sessionId: string) => {
     try {
-      const filePath = join(MESSAGES_DIR, `${sessionId}.json`);
+      const safeId = sanitizeSessionId(sessionId);
+      const filePath = join(MESSAGES_DIR, `${safeId}.json`);
       if (!existsSync(filePath)) return { messages: [] };
       const data = readFileSync(filePath, 'utf-8');
       return { messages: JSON.parse(data) };
@@ -493,24 +609,24 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
   });
 
-  ipcMain.handle(IPC.GIT_INFO, () => {
+  ipcMain.handle(IPC.GIT_INFO, async () => {
     const workspace = getCurrentWorkspace();
     try {
-      const branch = execSync('git rev-parse --abbrev-ref HEAD', {
+      const { stdout: branch } = await execAsync('git rev-parse --abbrev-ref HEAD', {
         cwd: workspace,
         encoding: 'utf-8',
         timeout: 10000,
-      }).trim();
+      });
 
-      const statusOutput = execSync('git status --porcelain', {
+      const { stdout: statusOutput } = await execAsync('git status --porcelain', {
         cwd: workspace,
         encoding: 'utf-8',
         timeout: 10000,
-      }).trim();
+      });
 
       const changedFiles = statusOutput ? statusOutput.split('\n').filter(Boolean).length : 0;
 
-      return { branch, changedFiles };
+      return { branch: branch.trim(), changedFiles };
     } catch (err) {
       // Git info is optional, just return empty if not a git repo
       console.debug('[GIT_INFO] Not a git repo or git not available:', err);
@@ -714,7 +830,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           }
         }
 
-        const output = execSync(command, { timeout: 30000, encoding: 'utf-8', cwd: getCurrentWorkspace() });
+        const { stdout: output } = await execAsync(command, { timeout: 30000, encoding: 'utf-8', cwd: getCurrentWorkspace() });
         const exec: AutomationExecution = {
           id: generateId(),
           ruleId: rule.id,
@@ -838,5 +954,86 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       const msg = e instanceof Error ? e.message : String(e);
       return { valid: false, error: msg };
     }
+  });
+
+  // === Skills ===
+  ipcMain.handle(IPC.SKILLS_LIST, () => {
+    // Return built-in skills list
+    return {
+      skills: [
+        { id: 'code-review', name: '代码审查', description: '审查代码质量、发现潜在问题、提供改进建议', triggers: ['审查', 'review', '检查代码', '代码质量'], icon: 'Search', priority: 8 },
+        { id: 'refactor', name: '代码重构', description: '优化代码结构、提高可读性和可维护性', triggers: ['重构', '优化', 'refactor', 'clean up'], icon: 'Shuffle', priority: 7 },
+        { id: 'debug', name: '调试辅助', description: '帮助定位和修复 bug', triggers: ['调试', 'bug', '错误', 'debug', 'fix', '修复'], icon: 'Bug', priority: 9 },
+        { id: 'test', name: '测试生成', description: '为代码生成单元测试和集成测试', triggers: ['测试', 'test', '单测', '单元测试'], icon: 'TestTube', priority: 6 },
+        { id: 'docs', name: '文档生成', description: '为代码生成文档和注释', triggers: ['文档', 'docs', '注释', 'documentation'], icon: 'FileText', priority: 5 },
+        { id: 'git-workflow', name: 'Git 工作流', description: '辅助 Git 操作，如提交、分支管理等', triggers: ['提交', 'commit', '分支', 'branch', 'git'], icon: 'GitBranch', priority: 4 },
+        { id: 'architecture', name: '架构设计', description: '帮助设计系统架构和模块划分', triggers: ['架构', '设计', 'architecture', 'design'], icon: 'Layout', priority: 6 },
+      ],
+    };
+  });
+
+  ipcMain.handle(IPC.SKILLS_MATCH, (_event, input: string) => {
+    // Simple keyword matching
+    const skills = [
+      { id: 'code-review', name: '代码审查', description: '审查代码质量', triggers: ['审查', 'review', '检查代码'], icon: 'Search', priority: 8 },
+      { id: 'refactor', name: '代码重构', description: '优化代码结构', triggers: ['重构', '优化', 'refactor'], icon: 'Shuffle', priority: 7 },
+      { id: 'debug', name: '调试辅助', description: '定位和修复 bug', triggers: ['调试', 'bug', '错误', 'debug', 'fix', '修复'], icon: 'Bug', priority: 9 },
+      { id: 'test', name: '测试生成', description: '生成测试代码', triggers: ['测试', 'test', '单测'], icon: 'TestTube', priority: 6 },
+      { id: 'docs', name: '文档生成', description: '生成文档', triggers: ['文档', 'docs', '注释'], icon: 'FileText', priority: 5 },
+      { id: 'git-workflow', name: 'Git 工作流', description: 'Git 操作', triggers: ['提交', 'commit', '分支', 'git'], icon: 'GitBranch', priority: 4 },
+      { id: 'architecture', name: '架构设计', description: '系统架构设计', triggers: ['架构', '设计', 'architecture'], icon: 'Layout', priority: 6 },
+    ];
+
+    const normalizedInput = input.toLowerCase();
+    const matches = [];
+
+    for (const skill of skills) {
+      const matchedTriggers = skill.triggers.filter(t => normalizedInput.includes(t.toLowerCase()));
+      if (matchedTriggers.length > 0) {
+        const confidence = Math.min(0.5 + matchedTriggers.length * 0.2, 1.0);
+        matches.push({ skill, confidence, matchedTriggers });
+      }
+    }
+
+    matches.sort((a, b) => b.confidence - a.confidence);
+    return { matches: matches.slice(0, 3) };
+  });
+
+  ipcMain.handle(IPC.SKILLS_ACTIVATE, (_event, skillId: string) => {
+    // Activate a skill (could trigger tool loading, etc.)
+    console.log('[Skills] Activating skill:', skillId);
+    return { success: true, skillId };
+  });
+
+  // === System Info ===
+  ipcMain.handle(IPC.SYSTEM_GET_INFO, async () => {
+    const os = await import('os');
+    return {
+      platform: os.platform(),
+      arch: os.arch(),
+      hostname: os.hostname(),
+      cpus: os.cpus().length,
+      totalMemory: os.totalmem(),
+      freeMemory: os.freemem(),
+      uptime: os.uptime(),
+    };
+  });
+
+  // === Collaboration ===
+  ipcMain.handle(IPC.COLLABORATION_LIST, () => {
+    // Return collaboration sessions (placeholder)
+    return { collaborations: [] };
+  });
+
+  // === Supervisor ===
+  let supervisorEnabled = false;
+  ipcMain.handle(IPC.SUPERVISOR_GET_VIOLATIONS, () => {
+    // Return supervisor violations (placeholder)
+    return { violations: [], enabled: supervisorEnabled };
+  });
+  ipcMain.handle(IPC.SUPERVISOR_SET_ENABLED, (_event, enabled: boolean) => {
+    supervisorEnabled = enabled;
+    console.log('[Supervisor] Enabled:', enabled);
+    return { success: true, enabled };
   });
 }

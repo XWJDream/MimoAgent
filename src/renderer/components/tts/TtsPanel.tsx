@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { X, Volume2, Play, Square, Loader2 } from 'lucide-react';
+import { useT } from '../../i18n';
 
 interface TtsPanelProps {
   onClose: () => void;
@@ -26,6 +27,7 @@ const VOICE_OPTIONS = [
 type Status = 'idle' | 'generating' | 'playing' | 'done' | 'error';
 
 export function TtsPanel({ onClose }: TtsPanelProps) {
+  const t = useT();
   const [text, setText] = useState('');
   const [model, setModel] = useState(TTS_MODELS[0].value);
   const [voice, setVoice] = useState(VOICE_OPTIONS[0].value);
@@ -42,13 +44,20 @@ export function TtsPanel({ onClose }: TtsPanelProps) {
   const [progress, setProgress] = useState(0);
   const progressTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const stopCurrentSource = useCallback(() => {
+    if (!sourceRef.current) return;
+    try {
+      sourceRef.current.stop();
+    } catch {
+      // AudioBufferSourceNode.stop() can throw after the source has already ended.
+    }
+    sourceRef.current = null;
+  }, []);
+
   // Cleanup on unmount: stop audio, close AudioContext, clear timer
   useEffect(() => {
     return () => {
-      if (sourceRef.current) {
-        try { sourceRef.current.stop(); } catch {}
-        sourceRef.current = null;
-      }
+      stopCurrentSource();
       if (progressTimer.current) {
         clearInterval(progressTimer.current);
         progressTimer.current = null;
@@ -58,20 +67,17 @@ export function TtsPanel({ onClose }: TtsPanelProps) {
         audioCtxRef.current = null;
       }
     };
-  }, []);
+  }, [stopCurrentSource]);
 
   const handleGenerate = useCallback(async () => {
     if (!text.trim()) {
-      setErrorMsg('请输入要转换的文本');
+      setErrorMsg(t('tts.emptyTextError'));
       setStatus('error');
       return;
     }
 
     // Stop any currently playing audio
-    if (sourceRef.current) {
-      try { sourceRef.current.stop(); } catch {}
-      sourceRef.current = null;
-    }
+    stopCurrentSource();
     if (progressTimer.current) {
       clearInterval(progressTimer.current);
       progressTimer.current = null;
@@ -84,7 +90,7 @@ export function TtsPanel({ onClose }: TtsPanelProps) {
     try {
       const result = await window.api.tts.generate({ text: text.trim(), model, voice, speed, thinkingIntensity: thinkingIntensity || undefined });
       if (!result.success || !result.audioUrl) {
-        setErrorMsg(result.error || '语音生成失败');
+        setErrorMsg(result.error || t('tts.generateFailed'));
         setStatus('error');
         return;
       }
@@ -93,7 +99,7 @@ export function TtsPanel({ onClose }: TtsPanelProps) {
       // Fetch audio data via custom protocol
       const resp = await fetch(result.audioUrl);
       if (!resp.ok) {
-        setErrorMsg(`获取音频失败: ${resp.status}`);
+        setErrorMsg(t('tts.fetchAudioFailed', { status: resp.status }));
         setStatus('error');
         return;
       }
@@ -132,29 +138,27 @@ export function TtsPanel({ onClose }: TtsPanelProps) {
         const pct = Math.min(elapsed / audioBuffer.duration, 1);
         setProgress(pct);
         if (pct >= 1) {
-          clearInterval(progressTimer.current!);
+          const timer = progressTimer.current;
+          if (timer) clearInterval(timer);
           progressTimer.current = null;
         }
       }, 100);
 
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : '语音生成失败');
+      setErrorMsg(err instanceof Error ? err.message : t('tts.generateFailed'));
       setStatus('error');
     }
-  }, [text, model, voice, speed, thinkingIntensity]);
+  }, [text, model, voice, speed, thinkingIntensity, t, stopCurrentSource]);
 
   const handleStop = useCallback(() => {
-    if (sourceRef.current) {
-      try { sourceRef.current.stop(); } catch {}
-      sourceRef.current = null;
-    }
+    stopCurrentSource();
     if (progressTimer.current) {
       clearInterval(progressTimer.current);
       progressTimer.current = null;
     }
     setStatus('done');
     setProgress(0);
-  }, []);
+  }, [stopCurrentSource]);
 
   const handleReplay = useCallback(() => {
     if (!audioCtxRef.current || !sourceRef.current?.buffer) return;
@@ -181,7 +185,8 @@ export function TtsPanel({ onClose }: TtsPanelProps) {
       const pct = Math.min(elapsed / source.buffer.duration, 1);
       setProgress(pct);
       if (pct >= 1) {
-        clearInterval(progressTimer.current!);
+        const timer = progressTimer.current;
+        if (timer) clearInterval(timer);
         progressTimer.current = null;
       }
     }, 100);
@@ -198,9 +203,9 @@ export function TtsPanel({ onClose }: TtsPanelProps) {
         setStatus('error');
       }
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : '保存失败');
+      setErrorMsg(err instanceof Error ? err.message : t('tts.saveFailed'));
     }
-  }, [audioId]);
+  }, [audioId, t]);
 
   const handleClose = useCallback(() => {
     handleStop();
@@ -236,13 +241,13 @@ export function TtsPanel({ onClose }: TtsPanelProps) {
       {/* Header */}
       <div className="panel-header">
         <div>
-          <div className="panel-subtitle">语音合成</div>
+          <div className="panel-subtitle">{t('tts.title')}</div>
           <h1 className="panel-title flex items-center gap-2">
             <Volume2 size={20} style={{ color: 'var(--accent)' }} />
-            TTS 语音合成
+            {t('tts.ttsTitle')}
           </h1>
         </div>
-        <button className="icon-button" onClick={handleClose} title="关闭"><X size={16} /></button>
+        <button className="icon-button" onClick={handleClose} title={t('common.close')}><X size={16} /></button>
       </div>
 
       {/* Status / Error */}
@@ -256,16 +261,16 @@ export function TtsPanel({ onClose }: TtsPanelProps) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* Text Input */}
         <div className="workspace-card">
-          <label style={labelStyle}>文本内容</label>
+          <label style={labelStyle}>{t('tts.textContent')}</label>
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="输入要转换为语音的文本..."
+            placeholder={t('tts.textPlaceholder')}
             rows={6}
             style={{ ...inputStyle, resize: 'vertical', minHeight: 120, fontFamily: 'inherit' }}
           />
           <div style={{ marginTop: 4, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>
-            {text.length} 字符
+            {t('tts.characters', { count: text.length })}
           </div>
         </div>
 
@@ -273,31 +278,31 @@ export function TtsPanel({ onClose }: TtsPanelProps) {
         <div className="workspace-card">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div>
-              <label style={labelStyle}>模型</label>
+              <label style={labelStyle}>{t('tts.model')}</label>
               <select value={model} onChange={(e) => setModel(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
                 {TTS_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
               </select>
             </div>
             <div>
-              <label style={labelStyle}>音色</label>
+              <label style={labelStyle}>{t('tts.voice')}</label>
               <select value={voice} onChange={(e) => setVoice(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
                 {VOICE_OPTIONS.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
               </select>
             </div>
             <div>
-              <label style={labelStyle}>语速: {speed.toFixed(1)}x</label>
+              <label style={labelStyle}>{t('tts.speed')}: {speed.toFixed(1)}x</label>
               <input type="range" min={0.25} max={4.0} step={0.05} value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))} style={{ width: '100%', accentColor: 'var(--accent)' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-muted)' }}>
                 <span>0.25x</span><span>4.0x</span>
               </div>
             </div>
             <div>
-              <label style={labelStyle}>思考强度</label>
+              <label style={labelStyle}>{t('tts.thinkingIntensity')}</label>
               <select value={thinkingIntensity} onChange={(e) => setThinkingIntensity(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                <option value="">关闭</option>
-                <option value="低">低</option>
-                <option value="中">中</option>
-                <option value="高">高</option>
+                <option value="">{t('tts.off')}</option>
+                <option value="低">{t('tts.low')}</option>
+                <option value="中">{t('tts.medium')}</option>
+                <option value="高">{t('tts.high')}</option>
               </select>
             </div>
           </div>
@@ -312,25 +317,25 @@ export function TtsPanel({ onClose }: TtsPanelProps) {
             style={{ flex: 1 }}
           >
             {status === 'generating' ? (
-              <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> 生成中...</>
+              <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> {t('tts.generating')}</>
             ) : (
-              <><Volume2 size={16} /> 生成语音</>
+              <><Volume2 size={16} /> {t('tts.generate')}</>
             )}
           </button>
           {(status === 'playing' || status === 'done') && (
             <>
               {status === 'playing' && (
                 <button className="btn-secondary" onClick={handleStop}>
-                  <Square size={14} /> 停止
+                  <Square size={14} /> {t('tts.stop')}
                 </button>
               )}
               {status === 'done' && (
                 <>
                   <button className="btn-secondary" onClick={handleReplay}>
-                    <Play size={14} /> 重播
+                    <Play size={14} /> {t('tts.replay')}
                   </button>
                   <button className="btn-secondary" onClick={handleSave}>
-                    保存文件
+                    {t('tts.saveFile')}
                   </button>
                 </>
               )}
@@ -344,7 +349,7 @@ export function TtsPanel({ onClose }: TtsPanelProps) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <Volume2 size={14} style={{ color: status === 'playing' ? 'var(--accent)' : 'var(--success)' }} />
               <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>
-                {status === 'playing' ? '播放中...' : '播放完成'}
+                {status === 'playing' ? t('tts.playing') : t('tts.playbackComplete')}
               </span>
               <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>
                 {duration.toFixed(1)}s
@@ -359,7 +364,7 @@ export function TtsPanel({ onClose }: TtsPanelProps) {
         {/* Saved Path */}
         {savedPath && (
           <div className="success-banner">
-            已保存到: {savedPath}
+            {t('tts.savedTo', { path: savedPath })}
           </div>
         )}
       </div>

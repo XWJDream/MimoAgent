@@ -6,6 +6,7 @@ import type { ToolRegistry } from '../tools/registry.js';
 import type { PermissionChecker } from '../permissions/checker.js';
 import type { ToolResult } from '../tools/base.js';
 import { createValidator, type ValidationOptions, type ValidationResult } from './validator.js';
+import { estimateMessageTokens, estimateTokens } from '../llm/tokenizer.js';
 
 export interface AgentHooks {
   beforeTool?: (name: string, args: Record<string, unknown>) => Promise<{ skip?: boolean; modifiedArgs?: Record<string, unknown> } | void>;
@@ -93,6 +94,35 @@ export async function* agentLoop(
           collector.feed({ type: 'tool_call_delta', index: i, argumentsDelta: JSON.stringify(tc.arguments) });
         }
       }
+    }
+
+    // If API didn't return usage data, estimate based on content
+    if (promptTokens === 0 && completionTokens === 0) {
+      const { content: responseContent, toolCalls: responseToolCalls } = collector.getResult();
+
+      // Estimate prompt tokens from messages using improved algorithm
+      promptTokens = messages.reduce((sum, m) => {
+        return sum + estimateMessageTokens(
+          m.content,
+          m.role,
+          m.tool_calls?.map(tc => ({ name: tc.name, arguments: tc.arguments })),
+          m.tool_call_id,
+        );
+      }, 0);
+
+      // Estimate completion tokens from response
+      let completionTokensEst = 0;
+      if (responseContent) {
+        completionTokensEst += estimateTokens(responseContent);
+      }
+      if (responseToolCalls) {
+        for (const tc of responseToolCalls) {
+          completionTokensEst += estimateTokens(tc.name);
+          completionTokensEst += estimateTokens(JSON.stringify(tc.arguments));
+          completionTokensEst += 6; // tool_call framing
+        }
+      }
+      completionTokens = completionTokensEst + 4; // response message framing
     }
 
     if (promptTokens > 0 || completionTokens > 0) {
@@ -244,8 +274,10 @@ export async function* agentLoop(
           role: 'system',
           content: reflectionPrompt,
         });
-        // Clear tool results for next iteration
-        toolResults.length = 0;
+      }
+      // Always clear tool results after processing to prevent memory leak
+      toolResults.length = 0;
+      if (reflectionPrompt) {
         // Continue to next iteration - don't exit
         continue;
       }

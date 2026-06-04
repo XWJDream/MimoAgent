@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FileTreeNode, WorkspaceInfo } from '../../../shared/types';
 import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, RefreshCw, X } from 'lucide-react';
 import { highlightCode } from '../../lib/highlighter';
+import { useT } from '../../i18n';
 import DOMPurify from 'dompurify';
 
 type WorkspacePanelMode = 'workspace' | 'files';
@@ -34,39 +35,40 @@ function WorkspaceSummary({
   onSelectWorkspace: () => void;
   onRefresh: () => void;
 }) {
+  const t = useT();
   return (
     <section className="workspace-panel">
       <div className="workspace-toolbar">
         <div className="min-w-0">
-          <div className="workspace-kicker">本地工作区</div>
-          <h1 className="workspace-title">{workspace?.name || '未选择工作区'}</h1>
+          <div className="workspace-kicker">{t('workspace.local')}</div>
+          <h1 className="workspace-title">{workspace?.name || t('workspace.notSelected')}</h1>
         </div>
         <div className="workspace-actions">
-          <button className="secondary-command" onClick={onRefresh} type="button" disabled={loading} title="刷新">
+          <button className="secondary-command" onClick={onRefresh} type="button" disabled={loading} title={t('workspace.refresh')}>
             <RefreshCw size={15} />
-            刷新
+            {t('workspace.refresh')}
           </button>
           <button className="primary-command compact" onClick={onSelectWorkspace} type="button">
-            选择目录
+            {t('workspace.selectDirectory')}
           </button>
         </div>
       </div>
 
       <div className="workspace-path-block">
-        <div className="section-label flush">当前路径</div>
-        <div className="workspace-path">{workspace?.path || '等待选择目录'}</div>
+        <div className="section-label flush">{t('workspace.currentPath')}</div>
+        <div className="workspace-path">{workspace?.path || t('workspace.waiting')}</div>
       </div>
 
       {error && <div className="workspace-error">{error}</div>}
 
       <div className="workspace-grid">
         <div className="workspace-stat">
-          <span>状态</span>
-          <strong>{loading ? '读取中' : workspace ? '已连接' : '未连接'}</strong>
+          <span>{t('workspace.status')}</span>
+          <strong>{loading ? t('workspace.statusReading') : workspace ? t('workspace.statusConnected') : t('workspace.statusNotConnected')}</strong>
         </div>
         <div className="workspace-stat">
-          <span>入口</span>
-          <strong>侧边栏切换</strong>
+          <span>{t('workspace.entry')}</span>
+          <strong>{t('workspace.entryMethod')}</strong>
         </div>
       </div>
     </section>
@@ -150,6 +152,7 @@ function FileExplorer({
   onToggleDirectory: (path: string) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const previewLines = useMemo(() => preview?.content.split(/\r?\n/).slice(0, 400).join('\n') || '', [preview]);
   const [highlightedHtml, setHighlightedHtml] = useState<string>('');
   const ext = useMemo(() => {
@@ -171,18 +174,18 @@ function FileExplorer({
     <section className="workspace-panel files-mode">
       <div className="workspace-toolbar">
         <div className="min-w-0">
-          <div className="workspace-kicker">项目文件</div>
-          <h1 className="workspace-title">{workspace?.name || '未选择工作区'}</h1>
+          <div className="workspace-kicker">{t('workspace.projectFiles')}</div>
+          <h1 className="workspace-title">{workspace?.name || t('workspace.notSelected')}</h1>
         </div>
         <div className="workspace-actions">
-          <button className="secondary-command" onClick={onRefreshFiles} type="button" disabled={loading} title="刷新文件树">
+          <button className="secondary-command" onClick={onRefreshFiles} type="button" disabled={loading} title={t('workspace.refreshFileTree')}>
             <RefreshCw size={15} />
-            刷新
+            {t('workspace.refresh')}
           </button>
           <button className="primary-command compact" onClick={onSelectWorkspace} type="button">
-            选择目录
+            {t('workspace.selectDirectory')}
           </button>
-          <button className="icon-button" onClick={onClose} type="button" title="返回聊天">
+          <button className="icon-button" onClick={onClose} type="button" title={t('workspace.backToChat')}>
             <X size={16} />
           </button>
         </div>
@@ -193,10 +196,10 @@ function FileExplorer({
       <div className="file-workbench">
         <div className="file-browser">
           <div className="file-browser-header">
-            <span className="truncate">{workspace ? shortPath(workspace.path) : '暂无工作区'}</span>
+            <span className="truncate">{workspace ? shortPath(workspace.path) : t('workspace.noWorkspace')}</span>
           </div>
-          {loading ? <div className="empty-rail">正在读取文件树...</div> : null}
-          {!loading && files.length === 0 ? <div className="empty-rail">没有可展示的文件。</div> : null}
+          {loading ? <div className="empty-rail">{t('workspace.loading')}</div> : null}
+          {!loading && files.length === 0 ? <div className="empty-rail">{t('workspace.noFiles')}</div> : null}
           {!loading && files.length > 0 ? (
             <FileTree nodes={files} selectedPath={selectedPath} onSelectFile={onSelectFile} openPaths={openPaths} onToggleDirectory={onToggleDirectory} />
           ) : null}
@@ -205,7 +208,7 @@ function FileExplorer({
         <div className="file-preview">
           <div className="file-preview-header">
             <FileText size={15} />
-            <span className="truncate">{preview?.name || '选择文件预览'}</span>
+            <span className="truncate">{preview?.name || t('workspace.selectFilePreview')}</span>
           </div>
           {preview ? (
             highlightedHtml ? (
@@ -217,7 +220,7 @@ function FileExplorer({
               <pre className="file-content">{previewLines}</pre>
             )
           ) : (
-            <div className="file-preview-empty">从左侧文件树选择一个文件。</div>
+            <div className="file-preview-empty">{t('workspace.selectFileHint')}</div>
           )}
         </div>
       </div>
@@ -234,6 +237,8 @@ export function WorkspacePanel({ mode, onClose }: WorkspacePanelProps) {
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openPaths, setOpenPaths] = useState<Set<string>>(() => new Set());
+
+  const t = useT();
 
   // LRU file content cache (max 50 entries)
   const fileCacheRef = useRef(new Map<string, string>());
@@ -285,7 +290,7 @@ export function WorkspacePanel({ mode, onClose }: WorkspacePanelProps) {
       const nextWorkspace = await window.api.workspace.get();
       setWorkspace(nextWorkspace);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '读取工作区失败');
+      setError(err instanceof Error ? err.message : t('error.readWorkspaceFailed'));
     } finally {
       setLoadingWorkspace(false);
     }
@@ -306,7 +311,7 @@ export function WorkspacePanel({ mode, onClose }: WorkspacePanelProps) {
       }
       setOpenPaths(rootDirs);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '读取项目文件失败');
+      setError(err instanceof Error ? err.message : t('error.readProjectFilesFailed'));
       setFiles([]);
     } finally {
       setLoadingFiles(false);
@@ -327,7 +332,7 @@ export function WorkspacePanel({ mode, onClose }: WorkspacePanelProps) {
       const nextFiles = await window.api.files.list(nextWorkspace.path);
       setFiles(nextFiles);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '选择工作区失败');
+      setError(err instanceof Error ? err.message : t('error.selectWorkspaceFailed'));
     }
   }, []);
 
@@ -346,7 +351,7 @@ export function WorkspacePanel({ mode, onClose }: WorkspacePanelProps) {
       setPreview({ path: node.path, name: node.name, content });
     } catch (err) {
       setPreview(null);
-      setError(err instanceof Error ? err.message : '预览文件失败');
+      setError(err instanceof Error ? err.message : t('error.previewFileFailed'));
     }
   }, [getCachedFile, setCachedFile]);
 

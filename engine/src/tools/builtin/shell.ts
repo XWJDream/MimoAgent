@@ -31,15 +31,41 @@ export class ShellTool extends BaseTool {
     }
 
     // Safety: block obviously destructive commands
-    const dangerous = [
-      'rm -rf /', 'rm -rf /*', 'mkfs', 'dd if=', ':(){:|:&};:',
-      'curl | sh', 'curl | bash', 'wget | sh', 'wget | bash',
-      'wget -O- | bash', 'chmod -R 777 /', '> /dev/sda',
-      'mv / ', 'rm -rf ~', 'rm -rf $HOME',
+    // Normalize command for detection (remove extra spaces, handle variations)
+    const normalizedCmd = command.replace(/\s+/g, ' ').trim().toLowerCase();
+
+    const dangerousPatterns = [
+      // Unix destructive commands
+      { pattern: /rm\s+(-[a-z]*f[a-z]*\s+)?(-[a-z]*r[a-z]*\s+)?\/(\s|$|\*)/, desc: 'rm on root' },
+      { pattern: /rm\s+(-[a-z]*r[a-z]*\s+)?(-[a-z]*f[a-z]*\s+)?\/(\s|$|\*)/, desc: 'rm on root' },
+      { pattern: /rm\s+-rf\s+~|rm\s+-rf\s+\$HOME/, desc: 'rm on home' },
+      { pattern: /mkfs/, desc: 'mkfs' },
+      { pattern: /dd\s+if=/, desc: 'dd' },
+      { pattern: /:\(\)\{.*\|.*&\}/, desc: 'fork bomb' },
+      { pattern: /(curl|wget)\s+.*\|\s*(sh|bash|zsh)/, desc: 'pipe to shell' },
+      { pattern: /(curl|wget)\s+.*\|\s*(sh|bash|zsh)/, desc: 'pipe to shell' },
+      { pattern: /chmod\s+-[a-z]*R\s+777\s+\//, desc: 'chmod 777 on root' },
+      { pattern: />\s*\/dev\/sd[a-z]/, desc: 'write to disk' },
+      { pattern: /mv\s+\/\s+/, desc: 'mv root' },
+
+      // Windows destructive commands
+      { pattern: /format\s+[a-z]:/, desc: 'format drive' },
+      { pattern: /del\s+\/[a-z]*\s+[a-z]:\\(\s|\*)/, desc: 'del drive root' },
+      { pattern: /rd\s+\/[a-z]*\s+[a-z]:\\/, desc: 'rd drive root' },
+      { pattern: /rmdir\s+\/[a-z]*\s+[a-z]:\\/, desc: 'rmdir drive root' },
+      { pattern: /shutdown\s+\/[a-z]*\s/, desc: 'shutdown' },
+      { pattern: /taskkill\s+\/[a-z]*\s+\/[a-z]*\s+system/, desc: 'kill system process' },
+      { pattern: /reg\s+delete\s+hklm\\/, desc: 'registry delete HKLM' },
+      { pattern: /cipher\s+\/[a-z]*:.*c:/, desc: 'cipher wipe' },
+
+      // Generic dangerous patterns
+      { pattern: />\s*\/dev\/null\s+2>&1\s*&/, desc: 'background redirect' },
+      { pattern: /\|\s*sudo/, desc: 'pipe to sudo' },
     ];
-    for (const pattern of dangerous) {
-      if (command.includes(pattern)) {
-        return { output: `Error: Blocked dangerous command: ${command}`, isError: true };
+
+    for (const { pattern, desc } of dangerousPatterns) {
+      if (pattern.test(command) || pattern.test(normalizedCmd)) {
+        return { output: `Error: Blocked dangerous command (${desc}): ${command}`, isError: true };
       }
     }
 

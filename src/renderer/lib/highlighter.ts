@@ -26,7 +26,7 @@ function escapeHtml(text: string): string {
 function highlightTokens(code: string): string {
   // Tokenize: strings, comments, numbers, keywords, identifiers, operators, punctuation
   // Uses [\s\S] for multi-line string support and trailing . as catch-all fallback
-  const tokenRegex = /(["'`])(?:(?!\1|\\)[\s\S]|\\.)*\1|\/\/.*$|\/\*[\s\S]*?\*\/|#.*$|\b\d+\.?\d*(?:e[+-]?\d+)?\b|\b[a-zA-Z_]\w*\b|[{}()\[\];,.:]+|[=!<>]=?=?|[+\-*/%&|^~?]+|\s+|./gm;
+  const tokenRegex = /(["'`])(?:(?!\1|\\)[\s\S]|\\.)*\1|\/\/.*$|\/\*[\s\S]*?\*\/|#.*$|\b\d+\.?\d*(?:e[+-]?\d+)?\b|\b[a-zA-Z_]\w*\b|[{}()[\];,.:]+|[=!<>]=?=?|[+\-*/%&|^~?]+|\s+|./gm;
 
   let result = '';
   let match: RegExpExecArray | null;

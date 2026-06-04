@@ -18,6 +18,7 @@ const baseConfig = {
   toolPreset: 'act' as const,
   maxTurns: 50,
   temperature: 0.2,
+  reasoningEffort: 'medium' as const,
   sandboxEnabled: false,
 };
 

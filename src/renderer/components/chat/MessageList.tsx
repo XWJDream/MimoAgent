@@ -1,22 +1,24 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { FolderSearch, Wrench, Rocket } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { useChatStore } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
-
-const suggestions = [
-  { icon: FolderSearch, title: '分析项目', desc: '理解代码结构与模块关系', prompt: '请分析这个项目的结构、主要模块和智能体调用链。' },
-  { icon: Wrench, title: '修复问题', desc: '定位并修复高优先级 Bug', prompt: '请检查当前项目，找一个高优先级问题并修复。' },
-  { icon: Rocket, title: '生成功能', desc: '基于需求编写新代码', prompt: '请根据项目需求，实现一个新的核心功能模块。' },
-];
+import { useT } from '../../i18n';
 
 export function MessageList() {
+  const t = useT();
   const messages = useChatStore((s) => s.messages);
   const currentResponse = useChatStore((s) => s.currentResponse);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const { sessions, activeSessionId } = useSessionStore();
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const suggestions = useMemo(() => [
+    { icon: FolderSearch, title: t('chat.suggestion.analyzeProject'), desc: t('chat.suggestion.analyzeProjectDesc'), prompt: t('chat.suggestion.analyzeProjectPrompt') },
+    { icon: Wrench, title: t('chat.suggestion.fixIssue'), desc: t('chat.suggestion.fixIssueDesc'), prompt: t('chat.suggestion.fixIssuePrompt') },
+    { icon: Rocket, title: t('chat.suggestion.generateFeature'), desc: t('chat.suggestion.generateFeatureDesc'), prompt: t('chat.suggestion.generateFeaturePrompt') },
+  ], [t]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -41,9 +43,9 @@ export function MessageList() {
   if (messages.length === 0 && !isStreaming) {
     return (
       <div className="empty-state">
-        <h1 className="empty-state-title">欢迎来到 MimoAgent</h1>
-        <p className="empty-state-subtitle">你的 AI 开发助手</p>
-        <p className="empty-state-desc">支持代码生成、调试、重构与项目分析</p>
+        <h1 className="empty-state-title">{t('chat.welcome')}</h1>
+        <p className="empty-state-subtitle">{t('chat.welcomeDesc')}</p>
+        <p className="empty-state-desc">{t('chat.welcomeFeatures')}</p>
 
         <div className="suggestions-grid">
           {suggestions.map((item) => {

@@ -2,19 +2,21 @@ import React, { useEffect } from 'react';
 import { useChatStore } from '../../stores/chatStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useT } from '../../i18n';
 
-const permissionLabels: Record<string, string> = {
-  suggest: '建议模式',
-  'auto-edit': '自动编辑',
-  'full-auto': '全自动',
+const permissionI18nKeys: Record<string, string> = {
+  suggest: 'permission.suggest',
+  'auto-edit': 'permission.autoEdit',
+  'full-auto': 'permission.fullAuto',
 };
 
-const toolPresetLabels: Record<string, string> = {
-  plan: '分析模式',
-  act: '操作模式',
+const toolPresetI18nKeys: Record<string, string> = {
+  plan: 'toolPreset.plan',
+  act: 'toolPreset.act',
 };
 
 export function StatusBar() {
+  const t = useT();
   const { usage, messages, isThinking, isStreaming, toolCalls } = useChatStore();
   const { config, apiStatus, apiError, validateApi } = useConfigStore();
   const { sessions, activeSessionId } = useSessionStore();
@@ -29,18 +31,18 @@ export function StatusBar() {
   }, [config.apiKeyConfigured, config.apiBase, apiStatus]);
 
   const statusText = !config.apiKeyConfigured
-    ? '未配置 API Key'
+    ? t('status.noApiKey')
     : apiStatus === 'checking'
-      ? '正在验证 API…'
+      ? t('status.checkingApi')
       : apiStatus === 'invalid'
-        ? `API 异常：${apiError || '连接失败'}`
+        ? t('status.apiError', { error: apiError || t('status.connectionFailed') })
         : hasRunningTool
-          ? '正在执行工具'
+          ? t('status.runningTool')
           : isThinking
-            ? '正在思考'
+            ? t('status.thinking')
             : isStreaming
-              ? '正在输出'
-              : '就绪';
+              ? t('status.streaming')
+              : t('status.ready');
 
   const statusColor = !config.apiKeyConfigured
     ? 'var(--warning)'
@@ -63,17 +65,17 @@ export function StatusBar() {
         {activeSession && (
           <span style={{ color: 'var(--text-secondary)' }}>{activeSession.name}</span>
         )}
-        <span>{messages.length} 条消息</span>
-        <span>{usage.sessionTokens.toLocaleString()} tokens</span>
+        <span>{t('status.messages', { count: messages.length })}</span>
+        <span>{t('status.tokens', { count: usage.sessionTokens.toLocaleString() })}</span>
         {usage.sessionCachedTokens > 0 && (
-          <span style={{ color: 'var(--success)' }}>缓存 {usage.sessionCachedTokens.toLocaleString()}</span>
+          <span style={{ color: 'var(--success)' }}>{t('status.cached', { count: usage.sessionCachedTokens.toLocaleString() })}</span>
         )}
-        <span>{usage.sessionToolCalls} 次工具调用</span>
+        <span>{t('status.toolCalls', { count: usage.sessionToolCalls })}</span>
       </div>
       <div className="flex items-center gap-3">
-        <span>{permissionLabels[config.permissionMode] || config.permissionMode}</span>
+        <span>{permissionI18nKeys[config.permissionMode] ? t(permissionI18nKeys[config.permissionMode]) : config.permissionMode}</span>
         {config.toolPreset && config.toolPreset !== 'act' && (
-          <span style={{ color: 'var(--warning)' }}>{toolPresetLabels[config.toolPreset] || config.toolPreset}</span>
+          <span style={{ color: 'var(--warning)' }}>{toolPresetI18nKeys[config.toolPreset] ? t(toolPresetI18nKeys[config.toolPreset]) : config.toolPreset}</span>
         )}
         <span>{config.model}</span>
       </div>

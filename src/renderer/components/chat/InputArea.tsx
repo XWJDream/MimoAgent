@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, AtSign, Hash, Slash, Square } from 'lucide-react';
 import { useChatStore } from '../../stores/chatStore';
 import { useConfigStore } from '../../stores/configStore';
+import { useT } from '../../i18n';
 import type { AppConfig } from '../../../shared/types';
 
 const MODELS = [
@@ -10,20 +11,6 @@ const MODELS = [
   { id: 'mimo-v2.5-tts-voiceclone', name: 'MiMo v2.5 TTS VoiceClone' },
   { id: 'mimo-v2.5-tts-voicedesign', name: 'MiMo v2.5 TTS VoiceDesign' },
   { id: 'mimo-v2.5-tts', name: 'MiMo v2.5 TTS' },
-];
-
-const TEMPERATURES = [
-  { value: '0', label: '精确 0' },
-  { value: '0.2', label: '低 0.2' },
-  { value: '0.5', label: '中 0.5' },
-  { value: '1', label: '高 1.0' },
-  { value: '1.5', label: '创意 1.5' },
-];
-
-const PERMISSION_MODES = [
-  { value: 'suggest', label: '建议模式' },
-  { value: 'auto-edit', label: '自动编辑' },
-  { value: 'full-auto', label: '全自动' },
 ];
 
 export function InputArea() {
@@ -43,6 +30,27 @@ export function InputArea() {
     finishResponse,
   } = useChatStore();
   const { config, setConfig } = useConfigStore();
+  const t = useT();
+
+  const TEMPERATURES = [
+    { value: '0', label: t('input.temperature.exact') },
+    { value: '0.2', label: t('input.temperature.low') },
+    { value: '0.5', label: t('input.temperature.medium') },
+    { value: '1', label: t('input.temperature.high') },
+    { value: '1.5', label: t('input.temperature.creative') },
+  ];
+
+  const PERMISSION_MODES = [
+    { value: 'suggest', label: t('permission.suggest') },
+    { value: 'auto-edit', label: t('permission.autoEdit') },
+    { value: 'full-auto', label: t('permission.fullAuto') },
+  ];
+
+  const REASONING_EFFORTS = [
+    { value: 'low', label: t('input.reasoning.low') },
+    { value: 'medium', label: t('input.reasoning.medium') },
+    { value: 'high', label: t('input.reasoning.high') },
+  ];
 
   const handleSubmit = useCallback(() => {
     const trimmed = input.trim();
@@ -182,20 +190,20 @@ export function InputArea() {
       {isDragging && (
         <div className="absolute inset-0 flex items-center justify-center rounded-2xl border-2 border-dashed"
              style={{ borderColor: 'var(--accent)', background: 'rgba(59, 130, 246, 0.05)', zIndex: 10 }}>
-          <span className="text-sm" style={{ color: 'var(--accent)' }}>拖放文件到此处</span>
+          <span className="text-sm" style={{ color: 'var(--accent)' }}>{t('chat.dragDrop')}</span>
         </div>
       )}
       <div className="composer">
         {/* Tag bar */}
         <div className="composer-tags">
           <button className="composer-tag" type="button">
-            <AtSign size={12} strokeWidth={2} /> Agent
+            <AtSign size={12} strokeWidth={2} /> {t('chat.agent')}
           </button>
           <button className="composer-tag" type="button">
-            <Slash size={12} strokeWidth={2} /> Command
+            <Slash size={12} strokeWidth={2} /> {t('chat.command')}
           </button>
           <button className="composer-tag" type="button">
-            <Hash size={12} strokeWidth={2} /> Project
+            <Hash size={12} strokeWidth={2} /> {t('chat.project')}
           </button>
         </div>
 
@@ -204,7 +212,7 @@ export function InputArea() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="向 MimoAgent 描述要修改、排查或验证的内容..."
+          placeholder={t('chat.placeholder')}
           rows={2}
           className="composer-input"
           disabled={isStreaming}
@@ -216,7 +224,7 @@ export function InputArea() {
               value={config.model}
               onChange={(e) => setConfig({ model: e.target.value })}
               className="toolbar-select"
-              title="模型"
+              title={t('input.model')}
             >
               {MODELS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
@@ -226,9 +234,19 @@ export function InputArea() {
               value={String(config.temperature)}
               onChange={(e) => setConfig({ temperature: parseFloat(e.target.value) })}
               className="toolbar-select"
-              title="温度"
+              title={t('input.temperature')}
             >
-              {TEMPERATURES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              {TEMPERATURES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
+          </div>
+          <div className="toolbar-group">
+            <select
+              value={config.reasoningEffort || 'medium'}
+              onChange={(e) => setConfig({ reasoningEffort: e.target.value as AppConfig['reasoningEffort'] })}
+              className="toolbar-select"
+              title={t('input.reasoningEffort')}
+            >
+              {REASONING_EFFORTS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
           </div>
           <div className="toolbar-group">
@@ -236,7 +254,7 @@ export function InputArea() {
               value={config.permissionMode}
               onChange={(e) => setConfig({ permissionMode: e.target.value as AppConfig['permissionMode'] })}
               className="toolbar-select"
-              title="权限模式"
+              title={t('input.permissionMode')}
             >
               {PERMISSION_MODES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
             </select>
@@ -245,12 +263,12 @@ export function InputArea() {
 
         <div className="composer-footer">
           <span className="composer-hint">
-            <kbd>Enter</kbd> 发送 · <kbd>Shift+Enter</kbd> 换行
+            <kbd>Enter</kbd> {t('chat.enterToSend')} · <kbd>Shift+Enter</kbd> {t('chat.shiftEnterToNewline')}
           </span>
           <button
             onClick={isStreaming ? handleStop : handleSubmit}
-            title={isStreaming ? '停止' : '发送'}
-            aria-label={isStreaming ? '停止' : '发送'}
+            title={isStreaming ? t('chat.stop') : t('chat.send')}
+            aria-label={isStreaming ? t('chat.stop') : t('chat.send')}
             disabled={!isStreaming && !input.trim()}
             className="send-button"
           >

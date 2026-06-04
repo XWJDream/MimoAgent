@@ -1,27 +1,29 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Folder, FolderOpen, GitBranch, MessageSquare, Plus, Search, Settings, Sparkles, Clock3, X, Volume2 } from 'lucide-react';
+import { Folder, FolderOpen, GitBranch, MessageSquare, Plus, Search, Settings, Sparkles, Clock3, X, Volume2, Edit3, Zap, Terminal, Users, Shield } from 'lucide-react';
 import { useChatStore } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useConfigStore } from '../../stores/configStore';
+import { useT } from '../../i18n';
 
 interface SidebarProps {
   onOpenSettings: () => void;
   onOpenWorkspace: () => void;
-  onOpenView: (view: 'chat' | 'workspace' | 'plugins' | 'automation' | 'tts') => void;
+  onOpenView: (view: 'chat' | 'workspace' | 'plugins' | 'automation' | 'tts' | 'skills' | 'console' | 'supervisor') => void;
   currentView: string;
 }
 
-function basename(path?: string) {
-  if (!path) return '未选择项目';
-  const normalized = path.replace(/\\/g, '/').replace(/\/$/, '');
-  return normalized.split('/').pop() || normalized;
-}
-
 export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentView }: SidebarProps) {
-  const { sessions, activeSessionId, setSessions, setActiveSession, addSession, removeSession, setSessionWorkspace } = useSessionStore();
+  const t = useT();
+  const { sessions, activeSessionId, setSessions, setActiveSession, addSession, removeSession, renameSession, setSessionWorkspace } = useSessionStore();
   const switchSession = useChatStore((s) => s.switchSession);
   const clearMessages = useChatStore((s) => s.clearMessages);
   const model = useConfigStore((s) => s.config.model);
+
+  function basename(path?: string) {
+    if (!path) return t('sidebar.noProject');
+    const normalized = path.replace(/\\/g, '/').replace(/\/$/, '');
+    return normalized.split('/').pop() || normalized;
+  }
   const activeSession = sessions.find((session) => session.id === activeSessionId) || sessions[0];
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -29,6 +31,9 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [gitBranch, setGitBranch] = useState<string>('');
   const [gitChangedFiles, setGitChangedFiles] = useState<number>(0);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
+  const editInputRef = useRef<HTMLInputElement>(null);
 
   const filteredSessions = searchQuery.trim()
     ? sessions.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -38,10 +43,35 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
     if (searchOpen) searchInputRef.current?.focus();
   }, [searchOpen]);
 
+  useEffect(() => {
+    if (editingSessionId && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [editingSessionId]);
+
+  const handleStartRename = (sessionId: string, currentName: string) => {
+    setEditingSessionId(sessionId);
+    setEditingName(currentName);
+  };
+
+  const handleFinishRename = () => {
+    if (editingSessionId && editingName.trim()) {
+      renameSession(editingSessionId, editingName.trim());
+    }
+    setEditingSessionId(null);
+    setEditingName('');
+  };
+
+  const handleCancelRename = () => {
+    setEditingSessionId(null);
+    setEditingName('');
+  };
+
   const handleNewChat = async () => {
     const workspace = await window.api.workspace.select();
     if (!workspace) return;
-    const session = await window.api.session.create(`会话 ${sessions.length + 1}`, workspace.path);
+    const session = await window.api.session.create(t('sidebar.sessionName', { count: sessions.length + 1 }), workspace.path);
     addSession(session);
     setActiveSession(session.id);
     clearMessages();
@@ -104,7 +134,7 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
         <nav className="codex-nav">
           <button onClick={handleNewChat} className="codex-nav-row new-chat-btn" type="button">
             <Plus size={16} strokeWidth={2} />
-            <span>新建会话</span>
+            <span>{t('sidebar.newSession')}</span>
           </button>
           <button
             className={`codex-nav-row ${searchOpen ? 'active' : ''}`}
@@ -115,30 +145,43 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
             }}
           >
             <Search size={16} strokeWidth={1.7} />
-            <span>搜索</span>
+            <span>{t('sidebar.search')}</span>
           </button>
           <button className={`codex-nav-row ${currentView === 'plugins' ? 'active' : ''}`} type="button" onClick={() => onOpenView('plugins')}>
             <Sparkles size={16} strokeWidth={1.7} />
-            <span>插件</span>
+            <span>{t('sidebar.plugins')}</span>
           </button>
           <button className={`codex-nav-row ${currentView === 'tts' ? 'active' : ''}`} type="button" onClick={() => onOpenView('tts')}>
             <Volume2 size={16} strokeWidth={1.7} />
-            <span>TTS</span>
+            <span>{t('sidebar.tts')}</span>
           </button>
           <button className={`codex-nav-row ${currentView === 'automation' ? 'active' : ''}`} type="button" onClick={() => onOpenView('automation')}>
             <Clock3 size={16} strokeWidth={1.7} />
-            <span>自动化</span>
+            <span>{t('sidebar.automation')}</span>
+          </button>
+          <button className={`codex-nav-row ${currentView === 'skills' ? 'active' : ''}`} type="button" onClick={() => onOpenView('skills')}>
+            <Zap size={16} strokeWidth={1.7} />
+            <span>{t('sidebar.skills') || '智能技能'}</span>
+          </button>
+          <button className={`codex-nav-row ${currentView === 'console' ? 'active' : ''}`} type="button" onClick={() => onOpenView('console')}>
+            <Terminal size={16} strokeWidth={1.7} />
+            <span>{t('sidebar.console') || '控制台'}</span>
+          </button>
+          {/* Collaboration is now shown inline below in AgentCollabSidebar */}
+          <button className={`codex-nav-row ${currentView === 'supervisor' ? 'active' : ''}`} type="button" onClick={() => onOpenView('supervisor')}>
+            <Shield size={16} strokeWidth={1.7} />
+            <span>{t('sidebar.supervisor') || '督导'}</span>
           </button>
         </nav>
 
         {/* Project */}
         <div className="codex-section">
-          <div className="codex-section-title">项目</div>
+          <div className="codex-section-title">{t('sidebar.project')}</div>
           <button className="codex-project-row" onClick={handleSelectFolder} type="button" title={activeSession?.workspacePath}>
             <Folder size={16} strokeWidth={1.7} />
             <div className="min-w-0 flex-1">
               <div className="truncate">{activeSession?.workspaceName || basename(activeSession?.workspacePath)}</div>
-              <div className="codex-row-subtitle truncate">绑定到当前会话</div>
+              <div className="codex-row-subtitle truncate">{t('sidebar.boundToSession')}</div>
             </div>
           </button>
           {gitBranch && (
@@ -169,7 +212,7 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
                     setSearchQuery('');
                   }
                 }}
-                placeholder="搜索会话..."
+                placeholder={t('sidebar.searchPlaceholder')}
                 style={{
                   width: '100%',
                   background: 'var(--bg-surface)',
@@ -183,14 +226,15 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
               />
             </div>
           ) : (
-            <div className="codex-section-title">对话</div>
+            <div className="codex-section-title">{t('sidebar.conversations')}</div>
           )}
           {filteredSessions.map((session) => {
             const isActive = session.id === activeSessionId;
+            const isEditing = editingSessionId === session.id;
             return (
               <button
                 key={session.id}
-                onClick={() => handleSwitchSession(session.id)}
+                onClick={() => !isEditing && handleSwitchSession(session.id)}
                 onMouseEnter={() => setHoveredSession(session.id)}
                 onMouseLeave={() => setHoveredSession(null)}
                 className={`codex-conversation-row ${isActive ? 'active' : ''}`}
@@ -199,38 +243,79 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
               >
                 <MessageSquare size={16} strokeWidth={1.7} />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate">{session.name}</div>
-                  <div className="codex-row-subtitle truncate">{session.workspaceName || basename(session.workspacePath)}</div>
+                  {isEditing ? (
+                    <input
+                      ref={editInputRef}
+                      type="text"
+                      value={editingName}
+                      onChange={(e) => setEditingName(e.target.value)}
+                      onBlur={handleFinishRename}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleFinishRename();
+                        if (e.key === 'Escape') handleCancelRename();
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        width: '100%',
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--accent)',
+                        borderRadius: 4,
+                        padding: '2px 6px',
+                        fontSize: 13,
+                        color: 'var(--text-primary)',
+                        outline: 'none',
+                      }}
+                    />
+                  ) : (
+                    <>
+                      <div className="truncate">{session.name}</div>
+                      <div className="codex-row-subtitle truncate">{session.workspaceName || basename(session.workspacePath)}</div>
+                    </>
+                  )}
                 </div>
-                {sessions.length > 1 && hoveredSession === session.id && (
-                  <X
-                    size={12}
-                    strokeWidth={1.5}
-                    className="session-delete-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm(`确认删除会话「${session.name}」？`)) {
-                        removeSession(session.id);
-                        window.api?.session.delete(session.id);
-                      }
-                    }}
-                  />
+                {!isEditing && hoveredSession === session.id && (
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <Edit3
+                      size={12}
+                      strokeWidth={1.5}
+                      className="session-edit-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartRename(session.id, session.name);
+                      }}
+                    />
+                    {sessions.length > 1 && (
+                      <X
+                        size={12}
+                        strokeWidth={1.5}
+                        className="session-delete-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(t('sidebar.confirmDelete', { name: session.name }))) {
+                            removeSession(session.id);
+                            window.api?.session.delete(session.id);
+                          }
+                        }}
+                      />
+                    )}
+                  </div>
                 )}
               </button>
             );
           })}
         </div>
+
       </div>
 
       {/* Footer */}
       <div className="codex-footer">
         <button onClick={onOpenWorkspace} className={`codex-nav-row ${currentView === 'workspace' ? 'active' : ''}`} type="button">
           <FolderOpen size={16} strokeWidth={1.7} />
-          <span>文件浏览</span>
+          <span>{t('sidebar.fileBrowser')}</span>
         </button>
         <button onClick={onOpenSettings} className="codex-nav-row" type="button">
           <Settings size={16} strokeWidth={1.7} />
-          <span>设置</span>
+          <span>{t('sidebar.settings')}</span>
         </button>
         <div className="codex-agent-pill">
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--success)', display: 'inline-block', animation: 'pulse-dot 2s ease-in-out infinite' }} />

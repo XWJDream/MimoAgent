@@ -1,6 +1,45 @@
 import { create } from 'zustand';
-import type { Message, ToolCallInfo, UsageStats } from '@shared/types';
+import type { Message, SubagentInfo, ToolCallInfo, UsageStats } from '@shared/types';
 import { useConfigStore } from './configStore';
+import { translateError } from '@shared/error-messages';
+
+// Token estimation for context size tracking (renderer-side approximate).
+// For the authoritative implementation, see engine/src/llm/tokenizer.ts.
+function estimateTextTokens(text: string): number {
+  if (!text) return 0;
+  let tokens = 0;
+  let i = 0;
+
+  while (i < text.length) {
+    const c = text[i];
+
+    if (/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uffef]/.test(c)) {
+      tokens += 1.5;
+      i++;
+    } else if (/[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f]/.test(c)) {
+      tokens += 0.8;
+      i++;
+    } else if (c === ' ' || c === '\t' || c === '\n' || c === '\r') {
+      tokens += 0.2;
+      i++;
+    } else if (/[a-zA-Z0-9_]/.test(c)) {
+      let wordLength = 0;
+      while (i < text.length && /[a-zA-Z0-9_]/.test(text[i])) {
+        wordLength++;
+        i++;
+      }
+      tokens += wordLength * 0.25 + 1;
+    } else if (/^[{}()[\];,.:!=<>+\-*/%&|^~?@#`\\]$/.test(c)) {
+      tokens += 1;
+      i++;
+    } else {
+      tokens += 1;
+      i++;
+    }
+  }
+
+  return Math.ceil(tokens);
+}
 
 // Token buffer management with flush guarantee
 let tokenBuffer = '';
@@ -42,6 +81,7 @@ interface ChatState {
   toolCalls: ToolCallInfo[];
   usage: UsageStats;
   activeSessionId: string;
+  subagents: SubagentInfo[];
 
   addMessage: (message: Message) => void;
   setThinking: (thinking: boolean) => void;
@@ -57,16 +97,41 @@ interface ChatState {
   compactMessages: () => void;
   loadMessages: (sessionId: string) => Promise<void>;
   switchSession: (sessionId: string) => void;
+  addSubagent: (agent: SubagentInfo) => void;
+  updateSubagent: (id: string, updates: Partial<SubagentInfo>) => void;
+  clearSubagents: () => void;
 }
 
 let responseId = '';
+let lastPromptTokens = 0; // Track previous turn's prompt tokens for cache estimation
 
-// Debounced save helper
+// Session data interface (messages + usage)
+interface SessionData {
+  messages: Message[];
+  usage: UsageStats;
+}
+
+// Debounced save helper - saves both messages and usage
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
-function debouncedSave(sessionId: string, messages: Message[]) {
+function debouncedSave(sessionId: string, messages: Message[], usage?: UsageStats) {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    window.api?.messages?.save(sessionId, messages).catch(console.error);
+    const data: SessionData = {
+      messages,
+      usage: usage || {
+        sessionTokens: 0,
+        sessionCost: 0,
+        sessionToolCalls: 0,
+        sessionCachedTokens: 0,
+        sessionPromptTokens: 0,
+        sessionCompletionTokens: 0,
+        totalTokens: 0,
+        totalCost: 0,
+        totalToolCalls: 0,
+        currentPromptTokens: 0,
+      },
+    };
+    window.api?.messages?.save(sessionId, data).catch(console.error);
   }, 500);
 }
 
@@ -77,6 +142,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   currentResponse: '',
   toolCalls: [],
   activeSessionId: 'default',
+  subagents: [],
   usage: {
     sessionTokens: 0,
     sessionCost: 0,
@@ -87,12 +153,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     totalTokens: 0,
     totalCost: 0,
     totalToolCalls: 0,
+    currentPromptTokens: 0,
   },
 
   addMessage: (message) => {
     set((state) => {
       const newMessages = [...state.messages, message];
-      debouncedSave(state.activeSessionId, newMessages);
+      debouncedSave(state.activeSessionId, newMessages, state.usage);
       return { messages: newMessages };
     });
   },
@@ -186,7 +253,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const newSessionTokens = prevUsage.sessionTokens + usage.tokens;
     const promptTokens = usage.promptTokens ?? 0;
     const completionTokens = usage.completionTokens ?? 0;
-    const cachedTokens = usage.cachedTokens ?? 0;
+    // Client-side cache estimation: API prefix caching reuses previous prompt tokens
+    const apiCachedTokens = usage.cachedTokens ?? 0;
+    const estimatedCached = promptTokens > 0 && lastPromptTokens > 0 && promptTokens > lastPromptTokens
+      ? Math.min(lastPromptTokens, promptTokens - completionTokens) // Previous prompt is prefix-cached
+      : 0;
+    const cachedTokens = apiCachedTokens > 0 ? apiCachedTokens : estimatedCached;
+    if (promptTokens > 0) lastPromptTokens = promptTokens;
     const { activeSessionId } = get();
     set({
       isStreaming: false,
@@ -202,17 +275,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
         sessionCachedTokens: prevUsage.sessionCachedTokens + cachedTokens,
         sessionPromptTokens: prevUsage.sessionPromptTokens + promptTokens,
         sessionCompletionTokens: prevUsage.sessionCompletionTokens + completionTokens,
+        currentPromptTokens: promptTokens || prevUsage.currentPromptTokens, // overwrite with latest turn
       },
     });
-    debouncedSave(activeSessionId, updatedMessages);
 
-    // Estimate current context size from message content
-    // Each message adds to the context sent to the API
-    const estimatedContextTokens = updatedMessages.reduce((sum, m) => {
-      // Rough estimate: 1 token ≈ 4 chars for Chinese/English mixed content
-      return sum + Math.ceil((m.content?.length || 0) / 3) + 50; // +50 for role/formatting overhead
-    }, 2000); // +2000 for system prompt
+    // Get the updated usage for saving
+    const updatedUsage = get().usage;
+    debouncedSave(activeSessionId, updatedMessages, updatedUsage);
 
+    // Use actual promptTokens from API for context estimation (much more accurate than content estimation)
     const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
       'mimo-v2.5-pro': 1048576,
       'mimo-v2.5': 262144,
@@ -222,21 +293,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
     const model = useConfigStore.getState().config.model;
     const contextWindow = MODEL_CONTEXT_WINDOWS[model] || 128000;
+    const actualContextTokens = promptTokens > 0
+      ? promptTokens
+      : updatedMessages.reduce((sum, m) => sum + estimateTextTokens(m.content || '') + 4, 2000);
 
-    // Compress when estimated context exceeds 70% of window
-    if (estimatedContextTokens > contextWindow * 0.7) {
+    // Compress when actual context exceeds 70% of window
+    if (actualContextTokens > contextWindow * 0.7) {
       get().compactMessages();
     }
   },
 
   failResponse: (error) => {
     const { messages, activeSessionId } = get();
+    // Translate technical error to user-friendly Chinese message
+    const friendlyMessage = translateError(error);
+    console.error('[Agent Error]', error); // Log technical error for debugging
     const newMessages: Message[] = [
       ...messages,
       {
         id: Date.now().toString(36),
         role: 'system' as const,
-        content: `运行失败：${error}`,
+        content: friendlyMessage,
         timestamp: Date.now(),
       },
     ];
@@ -246,7 +323,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       currentResponse: '',
       messages: newMessages,
     });
-    debouncedSave(activeSessionId, newMessages);
+    debouncedSave(activeSessionId, newMessages, get().usage);
   },
 
   clearMessages: () => {
@@ -267,7 +344,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         totalTokens: 0,
         totalCost: 0,
         totalToolCalls: 0,
+        currentPromptTokens: 0,
       },
+      subagents: [],
     });
     window.api?.messages?.save(activeSessionId, []).catch(console.error);
   },
@@ -310,81 +389,108 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   compactMessages: () => {
-    const { messages, activeSessionId } = get();
+    const { messages, activeSessionId, usage } = get();
     if (messages.length <= 5) return;
 
-    // Count removed messages for the summary
-    const removedCount = messages.length - 6;
+    const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+      'mimo-v2.5-pro': 1048576,
+      'mimo-v2.5': 262144,
+      'mimo-v2.5-tts': 128000,
+    };
+    const model = useConfigStore.getState().config.model;
+    const contextWindow = MODEL_CONTEXT_WINDOWS[model] || 128000;
+    const usageRatio = usage.sessionPromptTokens / contextWindow;
 
-    // Keep the system message compact info and last 6 messages
+    // Determine compression level based on context usage
+    let keepCount: number;
+    let level: string;
+    if (usageRatio > 0.85) {
+      // Heavy: keep only last 2 user-assistant pairs
+      keepCount = 4;
+      level = '重度';
+    } else if (usageRatio > 0.70) {
+      // Medium: keep half of messages (min 6)
+      keepCount = Math.max(6, Math.floor(messages.length / 2));
+      level = '中度';
+    } else {
+      // Light: keep last 60% of messages (min 6), strip early tool results
+      keepCount = Math.max(6, Math.floor(messages.length * 0.6));
+      level = '轻度';
+    }
+
+    const removedCount = messages.length - keepCount;
+    const earlyMessages = messages.slice(0, -keepCount);
+    const keptMessages = messages.slice(-keepCount);
+
+    // Light compression: strip tool results from early messages instead of removing them
+    const strippedEarly = level === '轻度'
+      ? earlyMessages.map((m) => {
+          if (m.role === 'tool' || (m.role === 'assistant' && m.toolCalls?.length)) {
+            return { ...m, content: m.content ? '[工具调用结果已压缩]' : m.content, toolCalls: undefined };
+          }
+          return m;
+        }).filter((m) => m.role !== 'tool') // Remove standalone tool messages
+      : [];
+
     const compacted: Message[] = [
       {
         id: 'compact-summary',
         role: 'system' as const,
-        content: `[对话历史已自动压缩，移除了 ${removedCount} 条早期消息]`,
+        content: `[${level}压缩] 上下文使用 ${Math.round(usageRatio * 100)}%，已压缩 ${removedCount} 条消息`,
         timestamp: Date.now(),
       },
-      ...messages.slice(-6),
+      ...strippedEarly,
+      ...keptMessages,
     ];
     set({ messages: compacted });
-    debouncedSave(activeSessionId, compacted);
+    debouncedSave(activeSessionId, compacted, get().usage);
 
     // Also compact on the server side
     window.api?.conversation.compact().catch(console.error);
   },
 
   loadMessages: async (sessionId: string) => {
+    const defaultUsage: UsageStats = {
+      sessionTokens: 0,
+      sessionCost: 0,
+      sessionToolCalls: 0,
+      sessionCachedTokens: 0,
+      sessionPromptTokens: 0,
+      sessionCompletionTokens: 0,
+      totalTokens: 0,
+      totalCost: 0,
+      totalToolCalls: 0,
+      currentPromptTokens: 0,
+    };
+
     try {
       const result = await window.api?.messages?.load(sessionId);
-      if (result?.messages && result.messages.length > 0) {
-        set({
-          messages: result.messages,
-          activeSessionId: sessionId,
-          // Reset usage for new session - recalculate from messages
-          usage: {
-            sessionTokens: 0,
-            sessionCost: 0,
-            sessionToolCalls: 0,
-            sessionCachedTokens: 0,
-            sessionPromptTokens: 0,
-            sessionCompletionTokens: 0,
-            totalTokens: 0,
-            totalCost: 0,
-            totalToolCalls: 0,
-          },
-        });
-      } else {
-        set({
-          messages: [],
-          activeSessionId: sessionId,
-          usage: {
-            sessionTokens: 0,
-            sessionCost: 0,
-            sessionToolCalls: 0,
-            sessionCachedTokens: 0,
-            sessionPromptTokens: 0,
-            sessionCompletionTokens: 0,
-            totalTokens: 0,
-            totalCost: 0,
-            totalToolCalls: 0,
-          },
-        });
+
+      // Handle both old format (array) and new format (object with messages + usage)
+      let messages: Message[] = [];
+      let usage: UsageStats = defaultUsage;
+
+      if (result?.messages) {
+        if (Array.isArray(result.messages)) {
+          // Old format: just messages array
+          messages = result.messages;
+        } else if (result.messages.messages) {
+          // New format: { messages, usage }
+          messages = result.messages.messages;
+          usage = result.messages.usage || defaultUsage;
+        }
       }
+
+      set({
+        messages,
+        activeSessionId: sessionId,
+        usage,
+      });
     } catch {
       set({
         messages: [],
         activeSessionId: sessionId,
-        usage: {
-          sessionTokens: 0,
-          sessionCost: 0,
-          sessionToolCalls: 0,
-          sessionCachedTokens: 0,
-          sessionPromptTokens: 0,
-          sessionCompletionTokens: 0,
-          totalTokens: 0,
-          totalCost: 0,
-          totalToolCalls: 0,
-        },
+        usage: defaultUsage,
       });
     }
   },
@@ -397,5 +503,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     // Load new session messages and reset usage
     get().loadMessages(sessionId);
+    // Clear subagents when switching sessions
+    set({ subagents: [] });
   },
+
+  addSubagent: (agent) => {
+    set((state) => ({ subagents: [...state.subagents, agent] }));
+  },
+
+  updateSubagent: (id, updates) => {
+    set((state) => ({
+      subagents: state.subagents.map((sa) => (sa.id === id ? { ...sa, ...updates } : sa)),
+    }));
+  },
+
+  clearSubagents: () => set({ subagents: [] }),
 }));

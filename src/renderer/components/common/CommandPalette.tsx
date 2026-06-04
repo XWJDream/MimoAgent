@@ -14,6 +14,7 @@ import {
   Volume2,
   Clock3,
 } from 'lucide-react';
+import { useT } from '../../i18n';
 
 interface Command {
   id: string;
@@ -46,6 +47,7 @@ export function CommandPalette({
   onOpenView,
   sidebarOpen,
 }: CommandPaletteProps) {
+  const t = useT();
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -55,41 +57,41 @@ export function CommandPalette({
     () => [
       {
         id: 'new-chat',
-        label: '新建对话',
+        label: t('command.newConversation'),
         shortcut: 'Ctrl+N',
         icon: <MessageSquarePlus size={16} strokeWidth={1.7} />,
         action: () => { onNewChat(); onClose(); },
       },
       {
         id: 'toggle-sidebar',
-        label: sidebarOpen ? '隐藏侧边栏' : '显示侧边栏',
+        label: sidebarOpen ? t('command.hideSidebar') : t('command.showSidebar'),
         shortcut: 'Ctrl+B',
         icon: sidebarOpen ? <PanelLeftClose size={16} strokeWidth={1.7} /> : <PanelLeft size={16} strokeWidth={1.7} />,
         action: () => { onToggleSidebar(); onClose(); },
       },
       {
         id: 'settings',
-        label: '打开设置',
+        label: t('command.openSettings'),
         shortcut: 'Ctrl+,',
         icon: <Settings size={16} strokeWidth={1.7} />,
         action: () => { onOpenSettings(); onClose(); },
       },
       {
         id: 'clear-chat',
-        label: '清空当前对话',
+        label: t('command.clearConversation'),
         shortcut: 'Ctrl+L',
         icon: <Trash2 size={16} strokeWidth={1.7} />,
         action: () => { onClearChat(); onClose(); },
       },
       {
         id: 'workspace',
-        label: '打开文件浏览',
+        label: t('command.openFileBrowser'),
         icon: <FolderSearch size={16} strokeWidth={1.7} />,
         action: () => { onOpenWorkspace(); onClose(); },
       },
       {
         id: 'compact',
-        label: '压缩对话历史',
+        label: t('command.compactHistory'),
         icon: <Database size={16} strokeWidth={1.7} />,
         action: () => {
           window.api?.conversation.compact();
@@ -98,30 +100,30 @@ export function CommandPalette({
       },
       {
         id: 'search',
-        label: '搜索项目文件',
+        label: t('command.searchFiles'),
         icon: <Search size={16} strokeWidth={1.7} />,
         action: () => { onOpenWorkspace(); onClose(); },
       },
       {
         id: 'plugins',
-        label: '打开插件管理',
+        label: t('command.openPlugins'),
         icon: <Sparkles size={16} strokeWidth={1.7} />,
         action: () => { onOpenView('plugins'); onClose(); },
       },
       {
         id: 'tts',
-        label: '打开 TTS 语音合成',
+        label: t('command.openTts'),
         icon: <Volume2 size={16} strokeWidth={1.7} />,
         action: () => { onOpenView('tts'); onClose(); },
       },
       {
         id: 'automation',
-        label: '打开自动化规则',
+        label: t('command.openAutomation'),
         icon: <Clock3 size={16} strokeWidth={1.7} />,
         action: () => { onOpenView('automation'); onClose(); },
       },
     ],
-    [onNewChat, onToggleSidebar, onOpenSettings, onClearChat, onOpenWorkspace, onOpenView, sidebarOpen, onClose],
+    [t, onNewChat, onToggleSidebar, onOpenSettings, onClearChat, onOpenWorkspace, onOpenView, sidebarOpen, onClose],
   );
 
   const filtered = useMemo(() => {
@@ -177,14 +179,14 @@ export function CommandPalette({
           ref={inputRef}
           type="text"
           className="command-palette-input"
-          placeholder="输入命令..."
+          placeholder={t('command.placeholder')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
         <div className="command-palette-list" ref={listRef}>
           {filtered.length === 0 ? (
             <div className="px-3 py-6 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>
-              没有匹配的命令
+              {t('command.noMatch')}
             </div>
           ) : (
             filtered.map((cmd, i) => (

@@ -29,6 +29,7 @@ export interface MimoConfig {
   apiKey: string;
   maxTokens: number;
   temperature: number;
+  reasoningEffort?: 'low' | 'medium' | 'high';
   contextWindow: number;
   permissionMode: PermissionMode;
   toolPreset?: ToolPreset;

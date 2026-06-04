@@ -1,4 +1,5 @@
 import type { ChatMessage, ToolCall } from '../llm/types.js';
+import { estimateTokens } from '../llm/tokenizer.js';
 
 export interface ConversationEntry {
   role: ChatMessage['role'];
@@ -31,16 +32,4 @@ export function toChatMessage(entry: ConversationEntry): ChatMessage {
     tool_calls: entry.tool_calls,
     tool_call_id: entry.tool_call_id,
   };
-}
-
-function estimateTokens(text: string): number {
-  let count = 0;
-  for (const char of text) {
-    if (/[一-鿿぀-ゟ゠-ヿ]/.test(char)) {
-      count += 0.5;
-    } else {
-      count += 0.25;
-    }
-  }
-  return Math.ceil(count);
 }

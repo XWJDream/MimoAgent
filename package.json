@@ -1,14 +1,16 @@
 {
   "name": "mimo-desktop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
+  "author": "MimoAgent Contributors",
   "description": "MimoAgent Desktop - AI coding agent powered by mimo-v2.5-pro",
   "main": "dist/main/index.js",
   "scripts": {
     "dev": "vite",
     "start": "npm run build && electron .",
     "start:dev": "tsx scripts/dev.ts",
-    "build": "npm run build:engine && tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && vite build",
+    "clean": "node scripts/clean-build.mjs",
+    "build": "npm run clean && npm run build:engine && tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && node scripts/write-preload-package.mjs && vite build",
     "build:engine": "npm --prefix engine run build",
     "build:main": "tsc -p tsconfig.main.json",
     "build:preload": "tsc -p tsconfig.preload.json",
@@ -19,7 +21,7 @@
     "package:win": "npm run build && electron-builder --win nsis",
     "package:dir": "npm run build && electron-builder --dir",
     "package:zip": "npm run package:dir && powershell -ExecutionPolicy Bypass -File scripts/package-zip.ps1",
-    "lint": "eslint src/",
+    "lint": "eslint \"src/**/*.{ts,tsx}\" && npm --prefix engine run lint",
     "typecheck": "npm run typecheck:engine && npm run typecheck:main && npm run typecheck:preload && npm run typecheck:renderer",
     "typecheck:engine": "tsc -p engine/tsconfig.json --noEmit",
     "typecheck:main": "tsc -p tsconfig.main.json --noEmit",
@@ -56,6 +58,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.0.0",
     "@tailwindcss/vite": "^4.0.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -66,11 +69,16 @@
     "@vitejs/plugin-react": "^4.0.0",
     "electron": "^33.4.11",
     "electron-builder": "^25.0.0",
+    "eslint": "^9.0.0",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.7.0",
+    "typescript-eslint": "^8.0.0",
     "vite": "^6.0.0",
     "vitest": "^4.1.8"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

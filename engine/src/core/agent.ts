@@ -37,6 +37,7 @@ export class Agent {
       maxTokens: config.maxTokens,
       temperature: config.temperature,
       timeout: 60000,
+      reasoningEffort: config.reasoningEffort,
     });
     this.toolRegistry = new ToolRegistry();
     this.memory = new ProjectMemory(this.workspace);

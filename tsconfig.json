@@ -22,6 +22,6 @@
       "@/*": ["./src/renderer/*"]
     }
   },
-  "include": ["src/**/*"],
+  "include": ["src/renderer/**/*", "src/shared/**/*"],
   "exclude": ["node_modules", "dist"]
 }

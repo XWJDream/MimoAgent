@@ -89,7 +89,7 @@ type AgentClassType = new (config: unknown, workspace?: string) => AgentInstance
 
 // Dynamic import for mimo-agent (compiled JS)
 let AgentClass: AgentClassType | null = null;
-type AgentRuntimeConfig = Pick<AppConfig, 'apiKey' | 'apiBase' | 'model' | 'permissionMode' | 'toolPreset' | 'maxTurns' | 'temperature' | 'sandboxEnabled'>;
+type AgentRuntimeConfig = Pick<AppConfig, 'apiKey' | 'apiBase' | 'model' | 'permissionMode' | 'toolPreset' | 'maxTurns' | 'temperature' | 'sandboxEnabled' | 'reasoningEffort'>;
 
 export function buildAgentConfig(config: AgentRuntimeConfig) {
   return {
@@ -98,6 +98,7 @@ export function buildAgentConfig(config: AgentRuntimeConfig) {
     apiKey: config.apiKey,
     maxTokens: 4096,
     temperature: config.temperature,
+    reasoningEffort: config.reasoningEffort || 'medium',
     contextWindow: 128000,
     permissionMode: config.permissionMode,
     toolPreset: config.toolPreset,
@@ -262,7 +263,9 @@ export class AgentService {
       for await (const event of generator) {
         if (event.type === 'done') {
           const tracker = this.agent?.getUsageTracker?.();
+          console.log('[AgentService] UsageTracker:', tracker);
           const stats = tracker?.getSessionStats?.() || {};
+          console.log('[AgentService] Session stats:', stats);
           window.webContents.send(IPC.AGENT_DONE, {
             tokens: stats.totalTokens || (stats.promptTokens ?? 0) + (stats.completionTokens ?? 0) || 0,
             cost: stats.totalCost || 0,
