@@ -2,7 +2,7 @@
 
 **AI 驱动的智能编程助手桌面端**
 
-基于 MiMo 大模型的 AI 编程工作台，支持代码生成、调试、重构、项目分析与语音合成。
+基于 MiMo 大模型的 AI 编程工作台，支持代码生成、调试、重构、项目分析、多 Agent 协同与语音合成。
 
 ---
 
@@ -14,8 +14,8 @@
 
 | 平台 | 文件 | 说明 |
 |------|------|------|
-| Windows | `MimoAgent Setup 0.2.0.exe` | 最新安装包 |
-| Windows | `MimoAgent Setup 0.1.0.exe` | 旧版本 |
+| Windows | `MimoAgent Setup 0.3.0.exe` | 最新安装包 |
+| Windows | `MimoAgent Setup 0.2.0.exe` | 旧版本 |
 
 > 首次启动需要在 **设置** 中配置 API Key。前往 [小米 MiMo 开放平台](https://ai.mi.com) 获取。
 
@@ -50,6 +50,19 @@ MiMo 提供两种 API 端点，根据你的计费方式选择：
 - **MCP 插件** — Model Context Protocol 扩展，自由添加第三方工具（实验性）
 - **自动化规则** — 文件变更监听、定时任务、手动触发（实验性）
 - **TTS 语音合成** — 9 种音色、语速调节、思考强度控制
+- **i18n 国际化** — 支持中文/英文切换
+
+### v0.3.0 新增
+
+- **智能技能加载** — 7 个内置技能（代码审查、重构、调试、测试、文档、Git、架构），关键词匹配自动推荐
+- **可视化控制台** — 系统信息监控（CPU、内存、磁盘）、实时日志流
+- **多 Agent 协同** — 子 Agent 状态追踪、任务依赖图、右侧 Inspector 面板实时展示
+- **Agent 编程督导** — 代码质量检查规则引擎、违规记录与统计
+- **上下文窗口优化** — 参考 Cline/OpenCode 设计，区分累计统计和当前上下文，Token 格式化显示（110K、1.2M）
+- **分级压缩策略** — 轻度（<70%）、中度（70-85%）、重度（>85%），保留关键上下文
+- **Stream Token 修复** — 修复 stream 模式下 usage 数据丢失问题
+- **配置持久化** — API Key、设置项重启后自动保留
+- **客户端缓存统计** — 基于前缀缓存原理估算缓存命中率
 
 ### v0.2.0 新增
 
@@ -116,7 +129,7 @@ MiMo 提供两种 API 端点，根据你的计费方式选择：
 | 子代理 | `sub-agent.test.ts` | 5 | ~60% |
 | Agent 循环 | `agent-loop.test.ts` | 8 | ~50% |
 
-**总计：28 个测试文件，327 个测试用例，总体覆盖率约 70%**
+**总计：28 个测试文件，324 个测试用例，总体覆盖率约 70%**
 
 ### 运行测试
 
@@ -143,7 +156,7 @@ MIMO_LIVE_TESTS=1 MIMO_API_KEY=your-key npm run test:live
 
 ### 环境要求
 
-- Node.js >= 18
+- Node.js >= 22
 - npm >= 9
 
 ### 快速开始
@@ -154,8 +167,8 @@ git clone https://github.com/XWJDream/MimoAgent.git
 cd MimoAgent
 
 # 安装依赖
-npm install
-cd engine && npm install && cd ..
+npm ci
+npm --prefix engine ci
 
 # 配置 API Key
 cp .env.example .env
@@ -171,6 +184,7 @@ npm run start:dev
 |------|------|
 | `npm run start:dev` | 启动 Vite + Electron 开发模式 |
 | `npm run build` | 完整构建（engine + main + preload + renderer） |
+| `npm run clean` | 清理 dist 和 engine/dist |
 | `npm run package:win` | 打包 Windows 安装包 |
 | `npm test` | 运行所有测试 |
 | `npm run lint` | 代码检查 |
@@ -185,7 +199,13 @@ MimoAgent/
 │   ├── preload/        # 安全桥接层
 │   ├── renderer/       # React UI
 │   │   ├── components/ # 界面组件
+│   │   │   ├── chat/        # 聊天面板
+│   │   │   ├── skills/      # 智能技能
+│   │   │   ├── console/     # 可视化控制台
+│   │   │   ├── supervisor/  # Agent 督导
+│   │   │   └── tools/       # Inspector 面板
 │   │   ├── stores/     # Zustand 状态管理
+│   │   ├── i18n/       # 国际化（中/英）
 │   │   └── styles/     # 全局样式
 │   └── shared/         # 共享类型与 IPC 通道
 ├── engine/             # Agent 引擎（独立 npm 包）
@@ -196,6 +216,8 @@ MimoAgent/
 │       ├── context/    # System Prompt、上下文压缩、使用统计
 │       ├── sandbox/    # Docker 沙盒、本地进程执行
 │       ├── llm/        # LLM 客户端、流式处理、Token 估算
+│       ├── skills/     # 技能注册、匹配引擎
+│       ├── supervisor/ # 督导规则引擎
 │       └── config/     # 配置加载、校验、默认值
 ├── resources/          # 应用图标
 └── scripts/            # 开发辅助脚本
@@ -255,8 +277,20 @@ MimoAgent/
 - **路径级权限** — 敏感文件操作需确认
 - **命令注入防护** — 危险命令自动拦截
 - **XSS 防护** — HTML 内容使用 DOMPurify 消毒
-- **内存泄漏防护** — TTS 音频自动清理
+- **内存泄漏防护** — TTS 音频自动清理、toolResults 及时清除
 - **循环检测** — 防止 Agent 无限循环
+- **CI Secret Scan** — GitHub Actions 自动扫描源码中的密钥泄露
+
+---
+
+## CI/CD
+
+项目使用 GitHub Actions 自动化：
+
+| Workflow | 触发条件 | 内容 |
+|----------|----------|------|
+| `Build & Test` | push/PR to dev/master | Secret Scan → Lint → Typecheck → Test → Build |
+| `Release` | push tag `v*` | 全流程质量门 → Package → Create Release → 上传 exe |
 
 ---
 
