@@ -74,14 +74,9 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
     const session = await window.api.session.create(t('sidebar.sessionName', { count: sessions.length + 1 }), workspace.path);
     addSession(session);
     setActiveSession(session.id);
-    clearMessages();
+    clearMessages(session.id);
+    onOpenView('chat');
   };
-
-  useEffect(() => {
-    window.api.session.list().then((remoteSessions) => {
-      if (remoteSessions.length > 0) setSessions(remoteSessions);
-    }).catch(console.error);
-  }, [setSessions]);
 
   useEffect(() => {
     if (!activeSession?.workspacePath) {
@@ -107,6 +102,7 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
   const handleSwitchSession = async (id: string) => {
     setActiveSession(id);
     switchSession(id);
+    onOpenView('chat');
     await window.api.session.switch(id);
   };
 
@@ -123,7 +119,7 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
 
   return (
     <aside className="codex-sidebar">
-      <div className="flex-1 min-h-0 flex flex-col">
+      <div className="codex-sidebar-main">
         {/* Header */}
         <div className="codex-sidebar-header">
           <span className="codex-sidebar-title">MimoAgent</span>
@@ -174,31 +170,8 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
           </button>
         </nav>
 
-        {/* Project */}
-        <div className="codex-section">
-          <div className="codex-section-title">{t('sidebar.project')}</div>
-          <button className="codex-project-row" onClick={handleSelectFolder} type="button" title={activeSession?.workspacePath}>
-            <Folder size={16} strokeWidth={1.7} />
-            <div className="min-w-0 flex-1">
-              <div className="truncate">{activeSession?.workspaceName || basename(activeSession?.workspacePath)}</div>
-              <div className="codex-row-subtitle truncate">{t('sidebar.boundToSession')}</div>
-            </div>
-          </button>
-          {gitBranch && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', fontSize: 12, color: 'var(--text-muted)' }}>
-              <GitBranch size={13} strokeWidth={1.7} />
-              <span style={{ fontFamily: 'var(--font-mono, monospace)' }}>{gitBranch}</span>
-              {gitChangedFiles > 0 && (
-                <span style={{ marginLeft: 'auto', background: 'var(--warning, #f59e0b)', color: 'rgba(0,0,0,0.8)', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 600 }}>
-                  {gitChangedFiles}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-
         {/* Conversations */}
-        <div className="codex-section flex-1 min-h-0 overflow-y-auto">
+        <div className="codex-section codex-conversations-section flex-1 min-h-0 overflow-y-auto">
           {searchOpen ? (
             <div style={{ padding: '0 0 8px' }}>
               <input
@@ -309,6 +282,27 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
 
       {/* Footer */}
       <div className="codex-footer">
+        <div className="codex-footer-project">
+          <div className="codex-section-title">{t('sidebar.project')}</div>
+          <button className="codex-project-row" onClick={handleSelectFolder} type="button" title={activeSession?.workspacePath}>
+            <Folder size={16} strokeWidth={1.7} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate">{activeSession?.workspaceName || basename(activeSession?.workspacePath)}</div>
+              <div className="codex-row-subtitle truncate">{t('sidebar.boundToSession')}</div>
+            </div>
+          </button>
+          {gitBranch && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', fontSize: 12, color: 'var(--text-muted)' }}>
+              <GitBranch size={13} strokeWidth={1.7} />
+              <span style={{ fontFamily: 'var(--font-mono, monospace)' }}>{gitBranch}</span>
+              {gitChangedFiles > 0 && (
+                <span style={{ marginLeft: 'auto', background: 'var(--warning, #f59e0b)', color: 'rgba(0,0,0,0.8)', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 600 }}>
+                  {gitChangedFiles}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
         <button onClick={onOpenWorkspace} className={`codex-nav-row ${currentView === 'workspace' ? 'active' : ''}`} type="button">
           <FolderOpen size={16} strokeWidth={1.7} />
           <span>{t('sidebar.fileBrowser')}</span>

@@ -91,7 +91,7 @@ interface ChatState {
   finishToolCall: (result: Pick<ToolCallInfo, 'name' | 'output'> & { isError: boolean }) => void;
   finishResponse: (usage: { tokens: number; cost: number; cachedTokens?: number; promptTokens?: number; completionTokens?: number }) => void;
   failResponse: (error: string) => void;
-  clearMessages: () => void;
+  clearMessages: (sessionId?: string) => void;
   editAndResend: (messageId: string, newContent: string) => string | null;
   regenerateFrom: (messageId: string) => string | null;
   compactMessages: () => void;
@@ -326,9 +326,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     debouncedSave(activeSessionId, newMessages, get().usage);
   },
 
-  clearMessages: () => {
-    const { activeSessionId } = get();
+  clearMessages: (sessionId) => {
+    const targetSessionId = sessionId || get().activeSessionId;
     set({
+      activeSessionId: targetSessionId,
       messages: [],
       currentResponse: '',
       toolCalls: [],
@@ -348,7 +349,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       },
       subagents: [],
     });
-    window.api?.messages?.save(activeSessionId, []).catch(console.error);
+    window.api?.messages?.save(targetSessionId, []).catch(console.error);
   },
 
   editAndResend: (messageId, newContent) => {

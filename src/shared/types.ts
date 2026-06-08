@@ -22,8 +22,8 @@ export interface IpcChannels {
 
   // Sessions
   'session:list': () => Session[];
-  'session:create': (name?: string) => Session;
-  'session:switch': (id: string) => void;
+  'session:create': (name?: string, workspacePath?: string) => Session;
+  'session:switch': (id: string) => Session | null;
   'session:delete': (id: string) => void;
   'session:rename': (id: string, name: string) => void;
   'session:set-workspace': (id: string, path: string) => Session;
