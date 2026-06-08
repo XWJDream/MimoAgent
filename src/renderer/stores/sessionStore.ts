@@ -44,6 +44,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   removeSession: (id) => {
+    if (id === 'default') return;
     set((state) => {
       const newSessions = state.sessions.filter((s) => s.id !== id);
       const newActive = state.activeSessionId === id

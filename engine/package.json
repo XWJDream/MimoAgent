@@ -48,5 +48,11 @@
   "engines": {
     "node": ">=22"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "allowScripts": {
+    "esbuild@0.28.0": true,
+    "fsevents@2.3.3": true,
+    "protobufjs@7.6.1": true,
+    "ssh2@1.17.0": true
+  }
 }

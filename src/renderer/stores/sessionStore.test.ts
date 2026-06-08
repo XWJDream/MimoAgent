@@ -128,6 +128,23 @@ describe('sessionStore', () => {
       const state = useSessionStore.getState();
       expect(state.sessions).toHaveLength(1);
     });
+
+    it('should not remove default session when other sessions exist', () => {
+      useSessionStore.setState({
+        sessions: [
+          { id: 'default', name: '新对话', createdAt: '', updatedAt: '', messageCount: 0 },
+          { id: 'other', name: 'Other', createdAt: '', updatedAt: '', messageCount: 0 },
+        ],
+        activeSessionId: 'default',
+      });
+
+      useSessionStore.getState().removeSession('default');
+
+      const state = useSessionStore.getState();
+      expect(state.sessions).toHaveLength(2);
+      expect(state.sessions[0].id).toBe('default');
+      expect(state.activeSessionId).toBe('default');
+    });
   });
 
   describe('renameSession()', () => {

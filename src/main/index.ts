@@ -2,7 +2,7 @@ import { app, BrowserWindow, protocol, session } from 'electron';
 import { config } from 'dotenv';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { createMainWindow } from './window.js';
+import { createMainWindow, loadMainWindow } from './window.js';
 import { registerIpcHandlers } from './ipc.js';
 import { ttsAudioStore } from './tts-store.js';
 
@@ -36,11 +36,13 @@ app.whenReady().then(() => {
 
   mainWindow = createMainWindow();
   registerIpcHandlers(mainWindow);
+  loadMainWindow(mainWindow);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createMainWindow();
       registerIpcHandlers(mainWindow);
+      loadMainWindow(mainWindow);
     }
   });
 });

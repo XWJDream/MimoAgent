@@ -299,6 +299,62 @@ function getDefaultWorkspace(): string {
   return resolve('.');
 }
 
+function createDefaultSession(): Session {
+  const now = new Date().toISOString();
+  return {
+    id: 'default',
+    name: '新对话',
+    createdAt: now,
+    updatedAt: now,
+    messageCount: 0,
+    workspacePath: '',
+    workspaceName: '',
+  };
+}
+
+function normalizeSessions(value: unknown): Session[] {
+  if (!Array.isArray(value)) return [createDefaultSession()];
+  const normalized = value
+    .filter((session): session is Partial<Session> => typeof session === 'object' && session !== null)
+    .filter((session) => typeof session.id === 'string' && typeof session.name === 'string')
+    .map((session) => ({
+      id: session.id as string,
+      name: session.name as string,
+      createdAt: typeof session.createdAt === 'string' ? session.createdAt : new Date().toISOString(),
+      updatedAt: typeof session.updatedAt === 'string' ? session.updatedAt : new Date().toISOString(),
+      messageCount: typeof session.messageCount === 'number' ? session.messageCount : 0,
+      workspacePath: typeof session.workspacePath === 'string' ? session.workspacePath : '',
+      workspaceName: typeof session.workspaceName === 'string' ? session.workspaceName : '',
+    }));
+  if (normalized.length === 0) return [createDefaultSession()];
+  if (!normalized.some((session) => session.id === 'default')) {
+    return [createDefaultSession(), ...normalized];
+  }
+  return normalized;
+}
+
+function loadSessionsFromDisk(): Session[] {
+  try {
+    if (!existsSync(SESSIONS_FILE)) return [createDefaultSession()];
+    const data = readFileSync(SESSIONS_FILE, 'utf-8');
+    return normalizeSessions(JSON.parse(data));
+  } catch (err) {
+    console.warn('[SESSIONS_LOAD] Failed to load sessions:', err);
+    return [createDefaultSession()];
+  }
+}
+
+function saveSessionsToDisk(sessionsData: Session[]): { success: boolean; error?: string } {
+  try {
+    const dir = join(SESSIONS_FILE, '..');
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(SESSIONS_FILE, JSON.stringify(sessionsData, null, 2));
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+}
+
 const defaultConfig: AppConfig = {
   model: 'mimo-v2.5-pro',
   apiBase: process.env.MIMO_API_BASE || 'https://api.xiaomimimo.com/v1',
@@ -316,18 +372,8 @@ const defaultConfig: AppConfig = {
 // Load saved config from disk and merge with defaults
 const savedConfig = loadConfig();
 const currentConfig: AppConfig = { ...defaultConfig, ...savedConfig };
-let activeSessionId = 'default';
-const sessions: Session[] = [
-  {
-    id: 'default',
-    name: '新对话',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    messageCount: 0,
-    workspacePath: '',
-    workspaceName: '',
-  },
-];
+let sessions: Session[] = loadSessionsFromDisk();
+let activeSessionId = sessions[0]?.id || 'default';
 const agentService = new AgentService();
 
 function getActiveSession(): Session | undefined {
@@ -355,6 +401,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   [
     IPC.CONFIG_GET,
     IPC.CONFIG_SET,
+    IPC.PERMISSION_REQUEST,
     IPC.WORKSPACE_GET,
     IPC.WORKSPACE_SET,
     IPC.WORKSPACE_SELECT,
@@ -368,6 +415,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     IPC.FILE_LIST,
     IPC.FILE_READ,
     IPC.FILE_WRITE,
+    IPC.SHELL_EXEC,
     IPC.AGENT_RUN,
     IPC.AGENT_CLEAR,
     IPC.MEMORY_GET,
@@ -375,10 +423,31 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     IPC.COMPACT,
     IPC.SESSIONS_SAVE,
     IPC.SESSIONS_LOAD,
+    IPC.MESSAGES_SAVE,
+    IPC.MESSAGES_LOAD,
     IPC.GIT_INFO,
+    IPC.TOOLS_LIST,
+    IPC.MCP_SERVERS_GET,
+    IPC.MCP_SERVERS_ADD,
+    IPC.MCP_SERVERS_REMOVE,
+    IPC.MCP_SERVERS_TOGGLE,
+    IPC.AUTOMATION_RULES_GET,
+    IPC.AUTOMATION_RULES_ADD,
+    IPC.AUTOMATION_RULES_REMOVE,
+    IPC.AUTOMATION_RULES_TOGGLE,
+    IPC.AUTOMATION_RULES_UPDATE,
+    IPC.AUTOMATION_EXECUTIONS_GET,
+    IPC.AUTOMATION_RUN,
     IPC.TTS_GENERATE,
     IPC.TTS_SAVE,
     IPC.API_VALIDATE,
+    IPC.SKILLS_LIST,
+    IPC.SKILLS_MATCH,
+    IPC.SKILLS_ACTIVATE,
+    IPC.SYSTEM_GET_INFO,
+    IPC.COLLABORATION_LIST,
+    IPC.SUPERVISOR_GET_VIOLATIONS,
+    IPC.SUPERVISOR_SET_ENABLED,
   ].forEach((channel) => ipcMain.removeHandler(channel));
 
   [IPC.WINDOW_MINIMIZE, IPC.WINDOW_MAXIMIZE, IPC.WINDOW_CLOSE, IPC.AGENT_STOP].forEach((channel) => {
@@ -444,6 +513,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       workspaceName: ws ? basename(ws) : '',
     };
     sessions.push(session);
+    activeSessionId = session.id;
+    saveSessionsToDisk(sessions);
     return session;
   });
   ipcMain.handle(IPC.SESSION_SWITCH, (_, id: string) => {
@@ -458,15 +529,27 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         console.log('[IPC] Session switched, workspace changed, reinitializing agent...');
         debouncedInit();
       }
+      return session;
     }
+    return null;
   });
   ipcMain.handle(IPC.SESSION_DELETE, (_, id: string) => {
+    if (id === 'default') return getActiveSession();
     const idx = sessions.findIndex((s) => s.id === id);
-    if (idx > 0) sessions.splice(idx, 1);
+    if (idx >= 0) {
+      sessions.splice(idx, 1);
+      if (sessions.length === 0) sessions = [createDefaultSession()];
+      if (activeSessionId === id) activeSessionId = sessions[0].id;
+      saveSessionsToDisk(sessions);
+    }
   });
   ipcMain.handle(IPC.SESSION_RENAME, (_, id: string, name: string) => {
     const session = sessions.find((s) => s.id === id);
-    if (session) session.name = name;
+    if (session) {
+      session.name = name;
+      session.updatedAt = new Date().toISOString();
+      saveSessionsToDisk(sessions);
+    }
   });
   ipcMain.handle(IPC.SESSION_SET_WORKSPACE, (_, id: string, path: string) => {
     const workspace = setWorkspace(path);
@@ -475,6 +558,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     session.workspacePath = workspace.path;
     session.workspaceName = workspace.name;
     session.updatedAt = new Date().toISOString();
+    saveSessionsToDisk(sessions);
     return session;
   });
 
@@ -556,23 +640,19 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   ipcMain.handle(IPC.SESSIONS_SAVE, async (_event, sessionsData: Session[]) => {
-    try {
-      const dir = join(SESSIONS_FILE, '..');
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      writeFileSync(SESSIONS_FILE, JSON.stringify(sessionsData, null, 2));
-      return { success: true };
-    } catch (e) { return { success: false, error: String(e) }; }
+    sessions = normalizeSessions(sessionsData);
+    if (!sessions.some((session) => session.id === activeSessionId)) {
+      activeSessionId = sessions[0].id;
+    }
+    return saveSessionsToDisk(sessions);
   });
 
   ipcMain.handle(IPC.SESSIONS_LOAD, async () => {
-    try {
-      if (!existsSync(SESSIONS_FILE)) return { sessions: [] };
-      const data = readFileSync(SESSIONS_FILE, 'utf-8');
-      return { sessions: JSON.parse(data) };
-    } catch (err) {
-      console.warn('[SESSIONS_LOAD] Failed to load sessions:', err);
-      return { sessions: [] };
+    sessions = loadSessionsFromDisk();
+    if (!sessions.some((session) => session.id === activeSessionId)) {
+      activeSessionId = sessions[0].id;
     }
+    return { sessions };
   });
 
   // Message persistence per session
