@@ -257,7 +257,7 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
                         handleStartRename(session.id, session.name);
                       }}
                     />
-                    {sessions.length > 1 && (
+                    {sessions.length > 1 && session.id !== 'default' && (
                       <X
                         size={12}
                         strokeWidth={1.5}

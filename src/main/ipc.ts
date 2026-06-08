@@ -326,7 +326,11 @@ function normalizeSessions(value: unknown): Session[] {
       workspacePath: typeof session.workspacePath === 'string' ? session.workspacePath : '',
       workspaceName: typeof session.workspaceName === 'string' ? session.workspaceName : '',
     }));
-  return normalized.length > 0 ? normalized : [createDefaultSession()];
+  if (normalized.length === 0) return [createDefaultSession()];
+  if (!normalized.some((session) => session.id === 'default')) {
+    return [createDefaultSession(), ...normalized];
+  }
+  return normalized;
 }
 
 function loadSessionsFromDisk(): Session[] {
@@ -530,6 +534,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return null;
   });
   ipcMain.handle(IPC.SESSION_DELETE, (_, id: string) => {
+    if (id === 'default') return getActiveSession();
     const idx = sessions.findIndex((s) => s.id === id);
     if (idx >= 0) {
       sessions.splice(idx, 1);
