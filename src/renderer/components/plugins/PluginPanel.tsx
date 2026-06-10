@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { X, Plus, Trash2, Power, Server, Wrench, RefreshCw } from 'lucide-react';
 import type { McpServerConfig, ToolInfo } from '../../../shared/types';
 import { useT } from '../../i18n';
+import { useToast } from '../common/Toast';
 
 interface PluginPanelProps {
   onClose: () => void;
@@ -9,6 +10,7 @@ interface PluginPanelProps {
 
 export function PluginPanel({ onClose }: PluginPanelProps) {
   const t = useT();
+  const { toast } = useToast();
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [servers, setServers] = useState<McpServerConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -16,6 +18,9 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
   const [newServer, setNewServer] = useState({ name: '', command: '', args: '' });
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [isAdding, setIsAdding] = useState(false);
+  const [removingServerId, setRemovingServerId] = useState<string | null>(null);
+  const [togglingServerId, setTogglingServerId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -38,6 +43,7 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
   const handleAddServer = async () => {
     if (!newServer.name.trim() || !newServer.command.trim()) return;
     setError(null);
+    setIsAdding(true);
     try {
       await window.api.mcp.addServer({
         name: newServer.name.trim(),
@@ -49,8 +55,12 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
       await loadData();
       setSuccessMsg(t('plugin.serverAdded', { name: newServer.name.trim() }));
       setTimeout(() => setSuccessMsg(null), 2000);
+      toast('服务器添加成功', 'success');
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error.addServerFailed'));
+      toast('添加失败', 'error');
+    } finally {
+      setIsAdding(false);
     }
   };
 
@@ -58,21 +68,29 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
     const server = servers.find((s) => s.id === id);
     if (!confirm(t('plugin.confirmDelete', { name: server?.name || id }))) return;
     setError(null);
+    setRemovingServerId(id);
     try {
       await window.api.mcp.removeServer(id);
       setServers((prev) => prev.filter((s) => s.id !== id));
+      toast('服务器已删除', 'success');
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error.deleteServerFailed'));
+    } finally {
+      setRemovingServerId(null);
     }
   };
 
   const handleToggleServer = async (id: string, enabled: boolean) => {
     setError(null);
+    setTogglingServerId(id);
     try {
       await window.api.mcp.toggleServer(id, enabled);
       setServers((prev) => prev.map((s) => (s.id === id ? { ...s, enabled } : s)));
+      toast(`服务器已${enabled ? '启用' : '禁用'}`, 'success');
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error.toggleServerFailed'));
+    } finally {
+      setTogglingServerId(null);
     }
   };
 
@@ -88,7 +106,15 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
           <h1 className="panel-title">{t('plugin.panelTitle')}</h1>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="icon-button" onClick={loadData} title={t('common.refresh')}><RefreshCw size={15} /></button>
+          <button
+            className="icon-button"
+            onClick={loadData}
+            disabled={loading}
+            title={loading ? '加载中...' : t('common.refresh')}
+            style={{ opacity: loading ? 0.5 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}
+          >
+            <RefreshCw size={15} style={loading ? { animation: 'spin 1s linear infinite' } : undefined} />
+          </button>
           <button className="icon-button" onClick={onClose} title={t('common.close')}><X size={16} /></button>
         </div>
       </div>
@@ -191,7 +217,7 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
                   />
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                     <button className="btn-secondary" onClick={() => setShowAddServer(false)} style={{ fontSize: 12, padding: '4px 10px' }}>{t('common.cancel')}</button>
-                    <button className="btn-primary" onClick={handleAddServer} style={{ fontSize: 12, padding: '4px 14px' }}>{t('plugin.add')}</button>
+                    <button className="btn-primary" onClick={handleAddServer} disabled={isAdding} style={{ fontSize: 12, padding: '4px 14px', opacity: isAdding ? 0.6 : 1, cursor: isAdding ? 'not-allowed' : 'pointer' }}>{isAdding ? '处理中...' : t('plugin.add')}</button>
                   </div>
                 </div>
               </div>
@@ -212,10 +238,22 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
                       <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>{server.name}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{server.command} {server.args.join(' ')}</div>
                     </div>
-                    <button className="icon-button" onClick={() => handleToggleServer(server.id, !server.enabled)} title={server.enabled ? t('plugin.disable') : t('plugin.enable')}>
+                    <button
+                      className="icon-button"
+                      onClick={() => handleToggleServer(server.id, !server.enabled)}
+                      disabled={togglingServerId === server.id}
+                      title={togglingServerId === server.id ? '处理中...' : server.enabled ? t('plugin.disable') : t('plugin.enable')}
+                      style={{ opacity: togglingServerId === server.id ? 0.5 : 1, cursor: togglingServerId === server.id ? 'not-allowed' : 'pointer' }}
+                    >
                       <Power size={13} style={{ color: server.enabled ? 'var(--success)' : 'var(--text-muted)' }} />
                     </button>
-                    <button className="icon-button danger" onClick={() => handleRemoveServer(server.id)} title={t('common.delete')}>
+                    <button
+                      className="icon-button danger"
+                      onClick={() => handleRemoveServer(server.id)}
+                      disabled={removingServerId === server.id}
+                      title={removingServerId === server.id ? '处理中...' : t('common.delete')}
+                      style={{ opacity: removingServerId === server.id ? 0.5 : 1, cursor: removingServerId === server.id ? 'not-allowed' : 'pointer' }}
+                    >
                       <Trash2 size={13} />
                     </button>
                   </div>

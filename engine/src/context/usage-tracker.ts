@@ -180,6 +180,11 @@ export class UsageTracker {
     };
   }
 
+  getLastRecord(): UsageRecord | null {
+    if (this.sessionRecords.length === 0) return null;
+    return this.sessionRecords[this.sessionRecords.length - 1];
+  }
+
   getSessionSummary(): string {
     const stats = this.getStats();
     return `Session: ${stats.sessionRecords} calls | ${stats.sessionTokens.toLocaleString()} tokens | $${stats.sessionEstimatedCost.toFixed(4)}`;

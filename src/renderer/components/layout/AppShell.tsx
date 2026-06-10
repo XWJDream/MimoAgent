@@ -12,6 +12,7 @@ import { SkillPanel } from '../skills/SkillPanel';
 import { ConsolePanel } from '../console/ConsolePanel';
 import { SupervisorPanel } from '../supervisor/SupervisorPanel';
 import { CommandPalette } from '../common/CommandPalette';
+import { ToastContainer } from '../common/Toast';
 import { useChatStore } from '../../stores/chatStore';
 
 type ViewMode = 'chat' | 'workspace' | 'plugins' | 'automation' | 'tts' | 'skills' | 'console' | 'supervisor';
@@ -165,20 +166,20 @@ export function AppShell() {
           className="flex-1 overflow-auto"
           style={{ display: currentView === 'skills' ? undefined : 'none', background: 'var(--bg-workspace)' }}
         >
-          {mountedRef.current.skills && <SkillPanel />}
+          {mountedRef.current.skills && <SkillPanel onClose={() => setCurrentView('chat')} />}
         </div>
         <div
           className="flex-1 overflow-auto"
           style={{ display: currentView === 'console' ? undefined : 'none', background: 'var(--bg-workspace)' }}
         >
-          {mountedRef.current.console && <ConsolePanel />}
+          {mountedRef.current.console && <ConsolePanel onClose={() => setCurrentView('chat')} />}
         </div>
         {/* Collaboration is now shown in the sidebar as AgentCollabSidebar */}
         <div
           className="flex-1 overflow-auto"
           style={{ display: currentView === 'supervisor' ? undefined : 'none', background: 'var(--bg-workspace)' }}
         >
-          {mountedRef.current.supervisor && <SupervisorPanel />}
+          {mountedRef.current.supervisor && <SupervisorPanel onClose={() => setCurrentView('chat')} />}
         </div>
         <main
           className="flex min-w-0 flex-1 flex-col overflow-hidden"
@@ -202,6 +203,8 @@ export function AppShell() {
         onOpenView={(view) => { mountedRef.current[view] = true; setCurrentView(view); }}
         sidebarOpen={sidebarOpen}
       />
+
+      <ToastContainer />
     </div>
   );
 }

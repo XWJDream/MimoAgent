@@ -18,6 +18,7 @@ export function InputArea() {
   const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const handleSubmitRef = useRef<() => void>(() => {});
+  const isSendingRef = useRef(false);
   const {
     addMessage,
     isStreaming,
@@ -54,7 +55,9 @@ export function InputArea() {
 
   const handleSubmit = useCallback(() => {
     const trimmed = input.trim();
-    if (!trimmed || isStreaming) return;
+    if (!trimmed || isStreaming || isSendingRef.current) return;
+
+    isSendingRef.current = true;
 
     addMessage({
       id: Date.now().toString(36),
@@ -70,6 +73,8 @@ export function InputArea() {
     window.api?.agent.run(trimmed).catch((err: Error) => {
       console.error('Agent error:', err);
       failResponse(err.message);
+    }).finally(() => {
+      isSendingRef.current = false;
     });
   }, [input, isStreaming, addMessage, setStreaming, setThinking, failResponse]);
 
@@ -79,6 +84,7 @@ export function InputArea() {
     window.api?.agent.stop();
     setThinking(false);
     setStreaming(false);
+    isSendingRef.current = false;
   }, [setStreaming, setThinking]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -176,6 +182,7 @@ export function InputArea() {
       unsubToolStart();
       unsubToolResult();
       unsubThinking();
+      api.agent.stop?.();
     };
   }, [appendToken, finishResponse, setThinking, setStreaming, failResponse, addToolCall, finishToolCall]);
 

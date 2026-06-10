@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, AlertTriangle, AlertCircle, Info, CheckCircle, X, RefreshCw } from 'lucide-react';
 import { useT } from '../../i18n';
+import { useToast } from '../common/Toast';
 
 interface SupervisorViolation {
   ruleId: string;
@@ -22,12 +23,20 @@ const SEVERITY_CONFIG = {
   error: { icon: AlertCircle, color: 'var(--error)', bg: 'var(--error-bg)' },
 };
 
-export function SupervisorPanel() {
+interface SupervisorPanelProps {
+  onClose: () => void;
+}
+
+export function SupervisorPanel({ onClose }: SupervisorPanelProps) {
   const t = useT();
+  const { toast } = useToast();
   const [violations, setViolations] = useState<SupervisorViolation[]>([]);
   const [stats, setStats] = useState<SupervisorStats>({ info: 0, warning: 0, error: 0 });
   const [filter, setFilter] = useState<string>('all');
   const [isEnabled, setIsEnabled] = useState(true);
+  const [isToggling, setIsToggling] = useState(false);
+  const [isMockData, setIsMockData] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     loadViolations();
@@ -41,11 +50,12 @@ export function SupervisorPanel() {
   }, []);
 
   const loadViolations = async () => {
+    setIsLoading(true);
     try {
       const result = await window.api?.supervisor?.getViolations();
       if (result?.violations) {
         setViolations(result.violations);
-        updateStats(result.violations);
+        updateStatsFromList(result.violations);
       }
     } catch {
       // Use mock data for demo
@@ -54,15 +64,21 @@ export function SupervisorPanel() {
         { ruleId: 'large-file-write', severity: 'warning', message: '写入大文件 (1500 行)', suggestion: '考虑将大文件拆分为多个较小的模块', timestamp: Date.now() - 30000 },
       ];
       setViolations(mockViolations);
-      updateStats(mockViolations);
+      updateStatsFromList(mockViolations);
+      setIsMockData(true);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const subscribeToViolations = () => {
     const handler = (_: unknown, ...args: unknown[]) => {
       const violation = args[0] as SupervisorViolation;
-      setViolations(prev => [...prev.slice(-100), violation]);
-      updateStats([...violations, violation]);
+      setViolations(prev => {
+        const updated = [...prev, violation].slice(-100);
+        updateStatsFromList(updated);
+        return updated;
+      });
     };
 
     window.api?.on?.('supervisor:violation', handler);
@@ -72,7 +88,7 @@ export function SupervisorPanel() {
     };
   };
 
-  const updateStats = (viols: SupervisorViolation[]) => {
+  const updateStatsFromList = (viols: SupervisorViolation[]) => {
     setStats({
       info: viols.filter(v => v.severity === 'info').length,
       warning: viols.filter(v => v.severity === 'warning').length,
@@ -80,18 +96,22 @@ export function SupervisorPanel() {
     });
   };
 
-  const clearViolations = () => {
+  const _clearViolations = () => {
     setViolations([]);
     setStats({ info: 0, warning: 0, error: 0 });
   };
 
   const toggleSupervisor = async () => {
     const newState = !isEnabled;
-    setIsEnabled(newState);
+    setIsToggling(true);
     try {
       await window.api?.supervisor?.setEnabled(newState);
+      setIsEnabled(newState);
+      toast(`督导已${newState ? '启用' : '禁用'}`, 'success');
     } catch {
-      // Ignore
+      toast('切换失败', 'error');
+    } finally {
+      setIsToggling(false);
     }
   };
 
@@ -109,27 +129,43 @@ export function SupervisorPanel() {
             <h2 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
               {t('supervisor.title') || '编程督导'}
             </h2>
+            {isMockData && (
+              <span style={{
+                padding: '2px 6px',
+                borderRadius: 4,
+                background: 'var(--warning)',
+                color: 'white',
+                fontSize: 10,
+                fontWeight: 600,
+              }}>演示数据</span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={toggleSupervisor}
+              disabled={isToggling}
               className="px-2 py-1 text-xs rounded"
               style={{
                 background: isEnabled ? 'var(--success)' : 'var(--text-muted)',
                 color: 'white',
                 border: 'none',
-                cursor: 'pointer',
+                cursor: isToggling ? 'not-allowed' : 'pointer',
+                opacity: isToggling ? 0.6 : 1,
               }}
             >
-              {isEnabled ? 'ON' : 'OFF'}
+              {isToggling ? '处理中...' : isEnabled ? 'ON' : 'OFF'}
             </button>
             <button
-              onClick={clearViolations}
+              onClick={() => { loadViolations(); }}
               className="p-1 rounded hover:bg-opacity-10"
-              style={{ color: 'var(--text-muted)' }}
-              title={t('supervisor.clear') || '清空'}
+              style={{ color: isLoading ? 'var(--text-muted)' : 'var(--text-primary)', opacity: isLoading ? 0.5 : 1, cursor: isLoading ? 'not-allowed' : 'pointer' }}
+              disabled={isLoading}
+              title={isLoading ? '加载中...' : (t('common.refresh') || '刷新')}
             >
-              <X size={14} />
+              <RefreshCw size={14} style={isLoading ? { animation: 'spin 1s linear infinite' } : undefined} />
+            </button>
+            <button onClick={onClose} className="icon-button" title={t('common.close') || '关闭'}>
+              <X size={16} />
             </button>
           </div>
         </div>

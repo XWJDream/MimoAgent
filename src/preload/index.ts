@@ -64,6 +64,8 @@ const IPC = {
   COLLABORATION_LIST: 'collaboration:list',
   SUPERVISOR_GET_VIOLATIONS: 'supervisor:get-violations',
   SUPERVISOR_SET_ENABLED: 'supervisor:set-enabled',
+
+  CONSOLE_GET_LOGS: 'console:get-logs',
 } as const;
 
 const api = {
@@ -227,6 +229,11 @@ const api = {
   supervisor: {
     getViolations: () => ipcRenderer.invoke(IPC.SUPERVISOR_GET_VIOLATIONS),
     setEnabled: (enabled: boolean) => ipcRenderer.invoke(IPC.SUPERVISOR_SET_ENABLED, enabled),
+  },
+
+  // Console
+  console: {
+    getLogs: () => ipcRenderer.invoke(IPC.CONSOLE_GET_LOGS),
   },
 
   // Generic event listeners

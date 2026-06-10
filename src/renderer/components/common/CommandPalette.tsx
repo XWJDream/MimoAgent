@@ -5,10 +5,10 @@ import {
   PanelLeftClose,
   PanelLeft,
   Trash2,
-  Cpu,
+  // Cpu (removed: unused)
   Database,
   FolderSearch,
-  Keyboard,
+  // Keyboard (removed: unused)
   Search,
   Sparkles,
   Volume2,

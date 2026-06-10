@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Wrench, Activity, Layers, Zap, Database, HardDrive, Users } from 'lucide-react';
+import React from 'react';
+import { Wrench, Activity, Layers, Zap, Database, Users } from 'lucide-react';
 import { ToolCard } from './ToolCard';
 import { useChatStore } from '../../stores/chatStore';
 import { useConfigStore } from '../../stores/configStore';
@@ -250,7 +250,7 @@ export function ToolPanel({ forceOpen }: ToolPanelProps) {
 
 /** Agent collaboration status in Inspector panel, bound to current session */
 function AgentCollabInspector() {
-  const t = useT();
+  const _t = useT();
   const subagents = useChatStore((s) => s.subagents);
   const isStreaming = useChatStore((s) => s.isStreaming);
 

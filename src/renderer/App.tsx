@@ -12,7 +12,7 @@ export default function App() {
   const theme = useConfigStore((state) => state.config.theme);
   const loadSessions = useSessionStore((state) => state.loadSessions);
   const loadMessages = useChatStore((state) => state.loadMessages);
-  const activeSessionId = useSessionStore((state) => state.activeSessionId);
+  const _activeSessionId = useSessionStore((state) => state.activeSessionId);
 
   useEffect(() => {
     // Load sessions from disk
