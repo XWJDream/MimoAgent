@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog } from 'electron';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
 import { IPC } from '../shared/ipc-channels.js';
-import type { AppConfig } from '../shared/types.js';
+import type { AppConfig, CollaborationTask } from '../shared/types.js';
 
 /** Permission request from engine */
 interface PermissionRequest {
@@ -133,9 +133,19 @@ export class AgentService {
   private currentWorkspace: string = '';
   private abortController: AbortController | null = null;
   private isRunning = false;
+  private onCollaborationEvent: ((event: 'add' | 'update', task: CollaborationTask) => void) | null = null;
+  private onSupervisorCheck: ((toolName: string, output: string, filePath?: string) => void) | null = null;
 
   setMainWindow(window: BrowserWindow) {
     this.mainWindow = window;
+  }
+
+  setCollaborationCallback(cb: (event: 'add' | 'update', task: CollaborationTask) => void) {
+    this.onCollaborationEvent = cb;
+  }
+
+  setSupervisorCallback(cb: (toolName: string, output: string, filePath?: string) => void) {
+    this.onSupervisorCheck = cb;
   }
 
   async initialize(config: AgentRuntimeConfig, workspace?: string) {
@@ -150,23 +160,23 @@ export class AgentService {
         this.currentConfig.temperature === config.temperature &&
         this.currentConfig.sandboxEnabled === config.sandboxEnabled &&
         (!workspace || workspace === this.currentWorkspace)) {
-      console.log('[AgentService] Already initialized with same config, skipping');
+      console.debug('[AgentService] Already initialized with same config, skipping');
       return;
     }
 
-    console.log('[AgentService] Initializing with config:', { model: config.model, apiBase: config.apiBase });
+    console.debug('[AgentService] Initializing with config:', { model: config.model, apiBase: config.apiBase });
 
     // Dynamically import mimo-agent (ES Module)
     if (!AgentClass) {
-      console.log('[AgentService] Loading mimo-agent module...');
+      console.debug('[AgentService] Loading mimo-agent module...');
       try {
         const appRoot = app.isPackaged ? app.getAppPath() : process.cwd();
         const agentPath = join(appRoot, 'engine', 'dist', 'core', 'agent.js');
         const agentUrl = pathToFileURL(agentPath).href;
-        console.log('[AgentService] Loading from:', agentUrl);
+        console.debug('[AgentService] Loading from:', agentUrl);
         const agentModule = await import(agentUrl);
         AgentClass = agentModule.Agent;
-        console.log('[AgentService] mimo-agent loaded successfully');
+        console.debug('[AgentService] mimo-agent loaded successfully');
       } catch (err) {
         console.error('[AgentService] Failed to load mimo-agent:', err);
         throw err;
@@ -183,7 +193,7 @@ export class AgentService {
     }
 
     this.agent = new AgentClass(agentConfig, ws);
-    console.log('[AgentService] Agent created, initializing...');
+    console.debug('[AgentService] Agent created, initializing...');
     await this.agent.initialize();
 
     // Set up permission prompt to use Electron native dialog
@@ -209,18 +219,18 @@ export class AgentService {
     }
 
     this.currentConfig = { ...config };
-    console.log('[AgentService] Agent initialized successfully');
+    console.debug('[AgentService] Agent initialized successfully');
   }
 
   async run(prompt: string, workspace?: string) {
-    console.log('[AgentService] Running with prompt:', prompt.slice(0, 50));
+    console.debug('[AgentService] Running with prompt:', prompt.slice(0, 50));
     if (!this.mainWindow) {
       throw new Error('Agent not initialized');
     }
 
     // Reinitialize if workspace changed
     if (workspace && workspace !== this.currentWorkspace && this.currentConfig) {
-      console.log('[AgentService] Workspace changed, reinitializing...');
+      console.debug('[AgentService] Workspace changed, reinitializing...');
       this.agent = null;
       await this.initialize(this.currentConfig, workspace);
     }
@@ -242,6 +252,9 @@ export class AgentService {
     // Send thinking event
     window.webContents.send(IPC.AGENT_THINKING);
 
+    // Track current tool args for supervisor check in onToolResult
+    let currentToolFilePath: string | undefined;
+
     try {
       const generator = this.agent.run(prompt, {
         streaming: true,
@@ -251,6 +264,33 @@ export class AgentService {
         },
         onToolStart: (name: string, args: Record<string, unknown>) => {
           window.webContents.send(IPC.AGENT_TOOL_START, { name, args });
+
+          // Capture file path for supervisor rule checking
+          const supervisorTools = new Set(['write_file', 'edit_file', 'shell']);
+          if (supervisorTools.has(name)) {
+            currentToolFilePath = (args.file_path as string) || (args.path as string) || undefined;
+          }
+
+          // Detect sub_agents_run tool call and create collaboration tasks
+          if (name === 'sub_agents_run' && this.onCollaborationEvent) {
+            const tasks = Array.isArray(args.tasks) ? args.tasks : [];
+            for (const task of tasks) {
+              if (task && typeof task === 'object' && typeof task.agent === 'string' && typeof task.task === 'string') {
+                const collabTask: CollaborationTask = {
+                  id: `sa-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+                  name: task.task.slice(0, 80),
+                  agentType: task.agent,
+                  status: 'running',
+                  prompt: task.task,
+                  startTime: Date.now(),
+                  toolCalls: 0,
+                  inputTokens: 0,
+                  outputTokens: 0,
+                };
+                this.onCollaborationEvent('add', collabTask);
+              }
+            }
+          }
         },
         onToolResult: (name: string, result: { output: string; isError: boolean }) => {
           window.webContents.send(IPC.AGENT_TOOL_RESULT, {
@@ -258,16 +298,36 @@ export class AgentService {
             output: result.output,
             isError: result.isError,
           });
+
+          // Supervisor: check tool output for code quality violations
+          const supervisorTools = new Set(['write_file', 'edit_file', 'shell']);
+          if (supervisorTools.has(name) && this.onSupervisorCheck) {
+            this.onSupervisorCheck(name, result.output, currentToolFilePath);
+            currentToolFilePath = undefined;
+          }
+
+          // Update collaboration tasks when sub_agents_run completes
+          if (name === 'sub_agents_run' && this.onCollaborationEvent) {
+            // Mark all running collaboration tasks as completed/failed
+            // The result output contains the sub-agent summaries
+            this.onCollaborationEvent('update', {
+              id: '__complete_all__',
+              status: result.isError ? 'failed' : 'completed',
+              endTime: Date.now(),
+              result: result.isError ? undefined : result.output.slice(0, 500),
+              error: result.isError ? result.output.slice(0, 500) : undefined,
+            } as CollaborationTask);
+          }
         },
       });
 
       for await (const event of generator) {
         if (event.type === 'done') {
           const tracker = this.agent?.getUsageTracker?.();
-          console.log('[AgentService] UsageTracker:', tracker);
+          console.debug('[AgentService] UsageTracker:', tracker);
           const stats = tracker?.getSessionStats?.() || {};
           const lastRecord = tracker?.getLastRecord?.();
-          console.log('[AgentService] Session stats:', stats);
+          console.debug('[AgentService] Session stats:', stats);
           window.webContents.send(IPC.AGENT_DONE, {
             tokens: stats.totalTokens || (stats.promptTokens ?? 0) + (stats.completionTokens ?? 0) || 0,
             cost: stats.totalCost || 0,
@@ -295,7 +355,7 @@ export class AgentService {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       if (this.abortController?.signal.aborted || message.includes('aborted') || message.includes('AbortError')) {
-        console.log('[AgentService] Run stopped');
+        console.debug('[AgentService] Run stopped');
         const tracker = this.agent?.getUsageTracker?.();
         const stats = tracker?.getSessionStats?.() || {};
         const lastRecord = tracker?.getLastRecord?.();

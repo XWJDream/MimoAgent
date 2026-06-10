@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { InputArea } from './InputArea';
@@ -49,6 +50,7 @@ beforeEach(() => {
   });
 
   // Mock window.api.agent for the component's event listeners
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).api = {
     ...window.api,
     agent: {

@@ -44,6 +44,7 @@ function estimateTextTokens(text: string): number {
 // Token buffer management with flush guarantee
 let tokenBuffer = '';
 let tokenFlushScheduled = false;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let tokenFlushSetState: ((updater: (state: any) => any) => void) | null = null;
 
 function scheduleTokenFlush() {
@@ -54,6 +55,7 @@ function scheduleTokenFlush() {
     if (tokenBuffer && tokenFlushSetState) {
       const buffered = tokenBuffer;
       tokenBuffer = '';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       tokenFlushSetState((state: any) => ({
         currentResponse: state.currentResponse + buffered,
       }));
@@ -67,6 +69,7 @@ function flushTokensSync() {
     const buffered = tokenBuffer;
     tokenBuffer = '';
     tokenFlushScheduled = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     tokenFlushSetState((state: any) => ({
       currentResponse: state.currentResponse + buffered,
     }));

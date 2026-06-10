@@ -63,7 +63,11 @@ export default {
   // Collaboration
   'collaboration.title': 'Multi-Agent Collaboration',
   'collaboration.noCollaborations': 'No collaboration tasks',
+  'collaboration.hint': 'When using the sub_agents_run tool, sub-agent collaboration info will appear here.',
   'collaboration.tasks': 'Task List',
+  'collaboration.running': 'running',
+  'collaboration.result': 'Result',
+  'collaboration.error': 'Error',
 
   // Supervisor
   'supervisor.title': 'Agent Supervisor',

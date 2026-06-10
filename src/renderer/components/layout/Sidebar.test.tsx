@@ -51,6 +51,7 @@ describe('Sidebar', () => {
       />,
     );
 
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     fireEvent.click(container.querySelector('.new-chat-btn')!);
 
     await waitFor(() => expect(useSessionStore.getState().activeSessionId).toBe('s2'));

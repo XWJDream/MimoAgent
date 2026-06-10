@@ -156,7 +156,7 @@ describe('sessionStore', () => {
     });
 
     it('should update updatedAt on rename', () => {
-      const before = new Date().toISOString();
+      const _before = new Date().toISOString();
       useSessionStore.getState().renameSession('default', 'New Name');
 
       const state = useSessionStore.getState();

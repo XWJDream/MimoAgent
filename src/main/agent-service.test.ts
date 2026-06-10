@@ -4,6 +4,7 @@ vi.mock('electron', () => ({
   app: {
     isPackaged: false,
     getAppPath: () => process.cwd(),
+    getPath: () => '/mock/userData',
   },
   BrowserWindow: class {},
 }));
@@ -70,7 +71,7 @@ describe('AgentService', () => {
 
   it('should accept a BrowserWindow via setMainWindow', () => {
     const service = new AgentService();
-    const mockWindow = {} as any;
+    const mockWindow = {} as unknown as import('electron').BrowserWindow;
     expect(() => service.setMainWindow(mockWindow)).not.toThrow();
   });
 });

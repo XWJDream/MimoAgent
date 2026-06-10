@@ -12,7 +12,11 @@ concurrency:
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -41,6 +45,8 @@ jobs:
             --include="*.yml" \
             --include="*.yaml" \
             --include="*.env*" \
+            --exclude="*.test.*" \
+            --exclude="*.spec.*" \
             src/ engine/src/ scripts/ 2>/dev/null || true)"
           if [ -n "$matches" ]; then
             echo "ERROR: Potential API key found in source files:"
@@ -65,7 +71,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-output
+          name: build-output-${{ matrix.os }}
           path: |
             dist/
             !dist/**/*.test.*

@@ -1,8 +1,9 @@
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { describe, expect, it, vi } from 'vitest';
 
 // Hoisted mocks shared between vi.mock factories and test code
 const { handlers, mockWriteFileSync } = vi.hoisted(() => ({
-  handlers: new Map<string, (...args: any[]) => any>(),
+  handlers: new Map<string, (...args: unknown[]) => unknown>(),
   mockWriteFileSync: vi.fn(),
 }));
 
@@ -19,7 +20,7 @@ vi.mock('electron', () => ({
     showSaveDialog: vi.fn().mockResolvedValue({ canceled: true, filePath: '' }),
   },
   ipcMain: {
-    handle: vi.fn((channel: string, handler: (...args: any[]) => any) => {
+    handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
       handlers.set(channel, handler);
     }),
     on: vi.fn(),
@@ -61,6 +62,8 @@ vi.mock('child_process', () => ({
 vi.mock('./agent-service.js', () => ({
   AgentService: class {
     setMainWindow() {}
+    setCollaborationCallback() {}
+    setSupervisorCallback() {}
     async initialize() {}
     async run() {}
     stop() {}
@@ -92,7 +95,7 @@ const mockWindow = {
   isDestroyed: vi.fn().mockReturnValue(false),
 };
 
-registerIpcHandlers(mockWindow as any);
+registerIpcHandlers(mockWindow as unknown as import('electron').BrowserWindow);
 
 describe('ipc', () => {
   describe('CONFIG_GET - maskApiKey', () => {
@@ -198,22 +201,22 @@ describe('ipc', () => {
       const handler = handlers.get('messages:save')!;
       const result = await handler({}, '../../../etc/passwd', []);
       expect(result.success).toBe(true);
-      const writeCall = mockWriteFileSync.mock.calls.find((c: any[]) =>
-        typeof c[0] === 'string' && c[0].endsWith('.json')
+      const writeCall = mockWriteFileSync.mock.calls.find((c: unknown[]) =>
+        typeof c[0] === 'string' && (c[0] as string).endsWith('.json')
       );
       expect(writeCall).toBeDefined();
-      expect(writeCall![0]).not.toContain('..');
+      expect((writeCall as unknown[])[0]).not.toContain('..');
     });
 
     it('should sanitize backslash path separators in session ID', async () => {
       mockWriteFileSync.mockClear();
       const handler = handlers.get('messages:save')!;
       await handler({}, '..\\..\\secret', []);
-      const writeCall = mockWriteFileSync.mock.calls.find((c: any[]) =>
-        typeof c[0] === 'string' && c[0].endsWith('.json')
+      const writeCall = mockWriteFileSync.mock.calls.find((c: unknown[]) =>
+        typeof c[0] === 'string' && (c[0] as string).endsWith('.json')
       );
       // The filename portion should not contain the original malicious input
-      const filename = writeCall![0].split(/[/\\]/).pop()!;
+      const filename = ((writeCall as unknown[])[0] as string).split(/[/\\]/).pop()!;
       expect(filename).not.toContain('..');
       expect(filename).toBe('____secret.json');
     });
@@ -222,10 +225,10 @@ describe('ipc', () => {
       mockWriteFileSync.mockClear();
       const handler = handlers.get('messages:save')!;
       await handler({}, 'normal-session-id', []);
-      const writeCall = mockWriteFileSync.mock.calls.find((c: any[]) =>
-        typeof c[0] === 'string' && c[0].endsWith('.json')
+      const writeCall = mockWriteFileSync.mock.calls.find((c: unknown[]) =>
+        typeof c[0] === 'string' && (c[0] as string).endsWith('.json')
       );
-      expect(writeCall![0]).toContain('normal-session-id');
+      expect((writeCall as unknown[])[0]).toContain('normal-session-id');
     });
   });
 });

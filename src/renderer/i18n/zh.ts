@@ -63,8 +63,12 @@ export default {
 
   // Collaboration
   'collaboration.title': '多 Agent 协同',
-  'collaboration.noCollaborations': '暂无协同任务',
+  'collaboration.noCollaborations': '暂无协作任务',
+  'collaboration.hint': '使用 sub_agents_run 工具时，子 Agent 协同信息将在此展示。',
   'collaboration.tasks': '任务列表',
+  'collaboration.running': '运行中',
+  'collaboration.result': '结果',
+  'collaboration.error': '错误',
 
   // Supervisor
   'supervisor.title': '编程督导',

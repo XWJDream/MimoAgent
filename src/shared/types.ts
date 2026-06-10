@@ -205,3 +205,19 @@ export interface AutomationExecution {
   output?: string;
   duration?: number;
 }
+
+// Collaboration task (shared between main and renderer)
+export interface CollaborationTask {
+  id: string;
+  name: string;
+  agentType: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  prompt: string;
+  result?: string;
+  error?: string;
+  startTime: number;
+  endTime?: number;
+  toolCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+}

@@ -10,15 +10,25 @@ import { readdir } from 'fs/promises';
 import { basename, isAbsolute, join, relative, resolve } from 'path';
 import { pathToFileURL } from 'url';
 import { IPC } from '../shared/ipc-channels.js';
-import type { AppConfig, AutomationExecution, AutomationRule, FileTreeNode, McpServerConfig, PublicAppConfig, Session, ToolInfo, WorkspaceInfo } from '../shared/types.js';
+import type { AppConfig, AutomationExecution, AutomationRule, CollaborationTask, FileTreeNode, McpServerConfig, PublicAppConfig, Session, ToolInfo, WorkspaceInfo } from '../shared/types.js';
 import { AgentService } from './agent-service.js';
+import { runRules } from './supervisor-rules.js';
+import type { Violation } from './supervisor-rules.js';
 import { ttsAudioStore } from './tts-store.js';
 
 // Module-level ref to the main window, set once registerIpcHandlers is called
 let mainWindowRef: BrowserWindow | null = null;
 
+// Module-level ref for supervisor check function, set inside registerIpcHandlers
+let supervisorCheckToolOutput: ((toolName: string, output: string, filePath?: string) => void) | null = null;
+
 const logBuffer: Array<{timestamp: number; level: string; message: string; source?: string}> = [];
 const MAX_LOG_BUFFER = 200;
+
+// Collaboration task tracking
+const collaborationTasks: CollaborationTask[] = [];
+const MAX_COLLABORATION_TASKS = 50;
+
 
 function sendLog(level: 'info' | 'warn' | 'error' | 'debug', message: string, source?: string) {
   logBuffer.push({ timestamp: Date.now(), level, message, source });
@@ -415,17 +425,62 @@ function debouncedInit() {
   }, 200);
 }
 
+// Collaboration task management
+export function addCollaborationTask(task: CollaborationTask): void {
+  collaborationTasks.push(task);
+  if (collaborationTasks.length > MAX_COLLABORATION_TASKS) collaborationTasks.shift();
+  if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+    mainWindowRef.webContents.send(IPC.COLLABORATION_UPDATE, task);
+  }
+}
+
+export function updateCollaborationTask(id: string, updates: Partial<CollaborationTask>): void {
+  const task = collaborationTasks.find(t => t.id === id);
+  if (task) {
+    Object.assign(task, updates);
+    if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+      mainWindowRef.webContents.send(IPC.COLLABORATION_UPDATE, task);
+    }
+  }
+}
+
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   mainWindowRef = mainWindow;
   agentService.setMainWindow(mainWindow);
 
+  // Wire up collaboration event tracking from agent-service
+  agentService.setCollaborationCallback((event, task) => {
+    if (event === 'add') {
+      addCollaborationTask(task);
+    } else if (event === 'update' && task.id === '__complete_all__') {
+      // Special signal: mark all running tasks with the given status
+      for (const t of collaborationTasks) {
+        if (t.status === 'running') {
+          Object.assign(t, {
+            status: task.status,
+            endTime: task.endTime,
+            result: task.result,
+            error: task.error,
+          });
+          if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+            mainWindowRef.webContents.send(IPC.COLLABORATION_UPDATE, t);
+          }
+        }
+      }
+    } else {
+      updateCollaborationTask(task.id, task);
+    }
+  });
+
   // Override global console methods to also forward logs to the renderer
-  const origLog = console.log;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any, no-console
+  const origLog: (...args: any[]) => void = console.log;
   const origWarn = console.warn;
   const origError = console.error;
   const origDebug = console.debug;
 
-  console.log = (...args: unknown[]) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any, no-console
+  console.log = (...args: any[]) => {
     origLog.apply(console, args);
     sendLog('info', args.map(String).join(' '));
   };
@@ -574,7 +629,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
       // If workspace changed, reinitialize agent with new workspace
       if (newWorkspace !== oldWorkspace && currentConfig.apiKey) {
-        console.log('[IPC] Session switched, workspace changed, reinitializing agent...');
+        console.debug('[IPC] Session switched, workspace changed, reinitializing agent...');
         sendLog('info', `Session switched to ${id}, workspace changed, reinitializing agent`, 'Session');
         debouncedInit();
       }
@@ -777,11 +832,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     try {
       const agent = agentService.getAgent();
       if (!agent) return [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const registry = (agent as any).toolRegistry;
       if (!registry) return [];
       const tools = registry.getAll ? registry.getAll() : [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return tools.map((t: any): ToolInfo => ({
-        name: t.name,
+        name: t.name || '',
         description: t.description || '',
         riskLevel: t.riskLevel || 'safe',
         categories: t.categories || [],
@@ -937,7 +994,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const startTime = Date.now();
     try {
       if (rule.action.type === 'run-prompt') {
-        const prompt = (rule.action.config as any).prompt;
+        const prompt = rule.action.config.prompt as string;
 
         // Notify frontend to start streaming mode before running agent
         mainWindow.webContents.send(IPC.AGENT_THINKING);
@@ -955,8 +1012,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         return { success: true };
       }
       if (rule.action.type === 'run-tool') {
-        const config = rule.action.config as any;
-        const command = config.command || config.args?.command;
+        const config = rule.action.config as Record<string, unknown>;
+        const command = (config.command as string) || ((config.args as Record<string, string>)?.command);
         if (!command) throw new Error('缺少执行命令');
 
         // Safety: block obviously destructive commands
@@ -1064,7 +1121,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('tts:save', async (_event, audioId: string) => {
     const buf = ttsAudioStore.get(audioId);
     if (!buf) return { success: false, error: '音频数据不存在' };
-    const { filePath } = await dialog.showSaveDialog(mainWindow!, {
+    const { filePath } = await dialog.showSaveDialog(mainWindow as BrowserWindow, {
       title: '保存语音文件',
       defaultPath: `tts-${Date.now()}.wav`,
       filters: [{ name: 'WAV Audio', extensions: ['wav'] }],
@@ -1143,7 +1200,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle(IPC.SKILLS_ACTIVATE, (_event, skillId: string) => {
     // Activate a skill (could trigger tool loading, etc.)
-    console.log('[Skills] Activating skill:', skillId);
+    console.debug('[Skills] Activating skill:', skillId);
     sendLog('info', `Activating skill: ${skillId}`, 'Skills');
     return { success: true, skillId };
   });
@@ -1209,23 +1266,53 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // === Collaboration ===
   ipcMain.handle(IPC.COLLABORATION_LIST, () => {
-    // Return collaboration sessions (placeholder)
-    return { collaborations: [] };
+    return { collaborations: collaborationTasks };
   });
 
   // === Supervisor ===
   let supervisorEnabled = false;
+  const violations: Violation[] = [];
+  const MAX_VIOLATIONS = 200;
+
   ipcMain.handle(IPC.SUPERVISOR_GET_VIOLATIONS, () => {
-    // Return supervisor violations (placeholder)
-    return { violations: [], enabled: supervisorEnabled };
+    return { violations, enabled: supervisorEnabled };
   });
+
   ipcMain.handle(IPC.SUPERVISOR_SET_ENABLED, (_event, enabled: boolean) => {
     supervisorEnabled = enabled;
-    console.log('[Supervisor] Enabled:', enabled);
+    console.debug('[Supervisor] Enabled:', enabled);
     sendLog('info', `Supervisor ${enabled ? 'enabled' : 'disabled'}`, 'Supervisor');
     return { success: true, enabled };
   });
 
+  // Expose checkToolOutput so AgentService can call it after tool execution
+  function checkToolOutput(toolName: string, output: string, filePath?: string): void {
+    if (!supervisorEnabled) return;
+    const newViolations = runRules(output, { filePath, toolName });
+    for (const v of newViolations) {
+      violations.push(v);
+      if (violations.length > MAX_VIOLATIONS) violations.shift();
+      mainWindow.webContents.send(IPC.SUPERVISOR_VIOLATION, v);
+    }
+  }
+
+  // Store reference for external access
+  supervisorCheckToolOutput = checkToolOutput;
+
+  // Wire up supervisor check from agent-service
+  agentService.setSupervisorCallback((toolName, output, filePath) => {
+    checkToolOutput(toolName, output, filePath);
+  });
+
   // === Console Log Buffer ===
   ipcMain.handle(IPC.CONSOLE_GET_LOGS, () => logBuffer);
+}
+
+/**
+ * Check tool output against supervisor rules.
+ * Call this from AgentService after tool execution (write_file, edit_file, shell).
+ * Returns early if supervisor is not enabled or registerIpcHandlers hasn't been called.
+ */
+export function checkToolOutput(toolName: string, output: string, filePath?: string): void {
+  supervisorCheckToolOutput?.(toolName, output, filePath);
 }

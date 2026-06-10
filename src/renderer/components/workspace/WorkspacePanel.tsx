@@ -268,7 +268,7 @@ export function WorkspacePanel({ mode, onClose }: WorkspacePanelProps) {
       order.push(path);
       // Evict oldest if over limit
       while (order.length > 50) {
-        const evict = order.shift()!;
+        const evict = order.shift() as string;
         cache.delete(evict);
       }
     }
