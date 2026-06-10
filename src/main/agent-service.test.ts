@@ -8,7 +8,7 @@ vi.mock('electron', () => ({
   BrowserWindow: class {},
 }));
 
-const { buildAgentConfig } = await import('./agent-service.js');
+const { buildAgentConfig, AgentService } = await import('./agent-service.js');
 
 const baseConfig = {
   apiKey: '',
@@ -35,5 +35,42 @@ describe('buildAgentConfig', () => {
 
     expect(config.toolPreset).toBe('plan');
     expect(config.subAgents.enabled).toBe(false);
+  });
+
+  it('maps all config fields correctly', () => {
+    const config = buildAgentConfig(baseConfig);
+
+    expect(config.model).toBe('mimo-v2.5-pro');
+    expect(config.apiBase).toBe('https://api.example.test/v1');
+    expect(config.apiKey).toBe('');
+    expect(config.temperature).toBe(0.2);
+    expect(config.reasoningEffort).toBe('medium');
+    expect(config.permissionMode).toBe('suggest');
+    expect(config.maxTurns).toBe(50);
+    expect(config.sandbox.enabled).toBe(false);
+    expect(config.stream).toBe(true);
+  });
+});
+
+describe('AgentService', () => {
+  it('should have null agent initially', () => {
+    const service = new AgentService();
+    expect(service.getAgent()).toBeNull();
+  });
+
+  it('should not throw when stop() is called on a non-running service', () => {
+    const service = new AgentService();
+    expect(() => service.stop()).not.toThrow();
+  });
+
+  it('should not throw when clear() is called without an agent', () => {
+    const service = new AgentService();
+    expect(() => service.clear()).not.toThrow();
+  });
+
+  it('should accept a BrowserWindow via setMainWindow', () => {
+    const service = new AgentService();
+    const mockWindow = {} as any;
+    expect(() => service.setMainWindow(mockWindow)).not.toThrow();
   });
 });

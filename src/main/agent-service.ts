@@ -61,6 +61,7 @@ interface AgentEvent {
 
 interface UsageTracker {
   getSessionStats(): SessionStats;
+  getLastRecord(): { promptTokens: number; completionTokens: number } | null;
 }
 
 interface SessionStats {
@@ -265,23 +266,25 @@ export class AgentService {
           const tracker = this.agent?.getUsageTracker?.();
           console.log('[AgentService] UsageTracker:', tracker);
           const stats = tracker?.getSessionStats?.() || {};
+          const lastRecord = tracker?.getLastRecord?.();
           console.log('[AgentService] Session stats:', stats);
           window.webContents.send(IPC.AGENT_DONE, {
             tokens: stats.totalTokens || (stats.promptTokens ?? 0) + (stats.completionTokens ?? 0) || 0,
             cost: stats.totalCost || 0,
             cachedTokens: stats.sessionCachedTokens ?? 0,
-            promptTokens: stats.promptTokens ?? 0,
+            promptTokens: lastRecord?.promptTokens ?? 0,
             completionTokens: stats.completionTokens ?? 0,
           });
         } else if (event.type === 'error') {
           if (this.abortController.signal.aborted) {
             const tracker = this.agent?.getUsageTracker?.();
             const stats = tracker?.getSessionStats?.() || {};
+            const lastRecord = tracker?.getLastRecord?.();
             window.webContents.send(IPC.AGENT_DONE, {
               tokens: stats.totalTokens || (stats.promptTokens ?? 0) + (stats.completionTokens ?? 0) || 0,
               cost: stats.totalCost || 0,
               cachedTokens: stats.sessionCachedTokens ?? 0,
-              promptTokens: stats.promptTokens ?? 0,
+              promptTokens: lastRecord?.promptTokens ?? 0,
               completionTokens: stats.completionTokens ?? 0,
             });
           } else {
@@ -295,11 +298,12 @@ export class AgentService {
         console.log('[AgentService] Run stopped');
         const tracker = this.agent?.getUsageTracker?.();
         const stats = tracker?.getSessionStats?.() || {};
+        const lastRecord = tracker?.getLastRecord?.();
         window.webContents.send(IPC.AGENT_DONE, {
           tokens: stats.totalTokens || (stats.promptTokens ?? 0) + (stats.completionTokens ?? 0) || 0,
           cost: stats.totalCost || 0,
           cachedTokens: stats.sessionCachedTokens ?? 0,
-          promptTokens: stats.promptTokens ?? 0,
+          promptTokens: lastRecord?.promptTokens ?? 0,
           completionTokens: stats.completionTokens ?? 0,
         });
       } else {

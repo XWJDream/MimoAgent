@@ -250,7 +250,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           },
         ]
       : messages;
-    const newSessionTokens = prevUsage.sessionTokens + usage.tokens;
+    // agent-service sends cumulative session stats from UsageTracker.getSessionStats(),
+    // so we overwrite session-scoped metrics instead of accumulating to avoid double-counting.
     const promptTokens = usage.promptTokens ?? 0;
     const completionTokens = usage.completionTokens ?? 0;
     // Client-side cache estimation: API prefix caching reuses previous prompt tokens
@@ -260,6 +261,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       : 0;
     const cachedTokens = apiCachedTokens > 0 ? apiCachedTokens : estimatedCached;
     if (promptTokens > 0) lastPromptTokens = promptTokens;
+    // Compute delta for lifetime metrics so cross-session accumulation is preserved
+    const sessionTokensDelta = usage.tokens - prevUsage.sessionTokens;
+    const sessionCostDelta = usage.cost - prevUsage.sessionCost;
     const { activeSessionId } = get();
     set({
       isStreaming: false,
@@ -268,13 +272,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       currentResponse: '',
       usage: {
         ...prevUsage,
-        sessionTokens: newSessionTokens,
-        sessionCost: prevUsage.sessionCost + usage.cost,
-        totalTokens: prevUsage.totalTokens + usage.tokens,
-        totalCost: prevUsage.totalCost + usage.cost,
-        sessionCachedTokens: prevUsage.sessionCachedTokens + cachedTokens,
-        sessionPromptTokens: prevUsage.sessionPromptTokens + promptTokens,
-        sessionCompletionTokens: prevUsage.sessionCompletionTokens + completionTokens,
+        sessionTokens: usage.tokens,
+        sessionCost: usage.cost,
+        totalTokens: prevUsage.totalTokens + sessionTokensDelta,
+        totalCost: prevUsage.totalCost + sessionCostDelta,
+        sessionCachedTokens: cachedTokens,
+        sessionPromptTokens: promptTokens,
+        sessionCompletionTokens: completionTokens,
         currentPromptTokens: promptTokens || prevUsage.currentPromptTokens, // overwrite with latest turn
       },
     });

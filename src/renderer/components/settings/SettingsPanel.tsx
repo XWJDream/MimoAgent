@@ -4,6 +4,7 @@ import { ModelSelector } from "./ModelSelector";
 import { PermissionMode } from "./PermissionMode";
 import { Moon, Sun } from "lucide-react";
 import { useT } from "../../i18n";
+import { useToast } from "../common/Toast";
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -15,6 +16,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
   const [apiKey, setApiKey] = useState("");
   const [apiBase, setApiBase] = useState(config.apiBase);
   const t = useT();
+  const { toast } = useToast();
 
   if (!isOpen) return null;
 
@@ -24,13 +26,16 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
       ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
     });
     setApiKey("");
+    toast('设置已保存', 'success');
     onClose();
     setTimeout(() => validateApi(), 300);
   };
 
   const handleClearApiKey = () => {
+    if (!confirm('确定要清除 API Key 吗？')) return;
     setConfig({ apiKey: "" });
     setApiKey("");
+    toast('API Key 已清除', 'success');
   };
 
   return (

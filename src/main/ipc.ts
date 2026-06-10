@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
-import { exec } from 'child_process';
+import { exec, execSync } from 'child_process';
+import * as os from 'os';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
@@ -12,6 +13,25 @@ import { IPC } from '../shared/ipc-channels.js';
 import type { AppConfig, AutomationExecution, AutomationRule, FileTreeNode, McpServerConfig, PublicAppConfig, Session, ToolInfo, WorkspaceInfo } from '../shared/types.js';
 import { AgentService } from './agent-service.js';
 import { ttsAudioStore } from './tts-store.js';
+
+// Module-level ref to the main window, set once registerIpcHandlers is called
+let mainWindowRef: BrowserWindow | null = null;
+
+const logBuffer: Array<{timestamp: number; level: string; message: string; source?: string}> = [];
+const MAX_LOG_BUFFER = 200;
+
+function sendLog(level: 'info' | 'warn' | 'error' | 'debug', message: string, source?: string) {
+  logBuffer.push({ timestamp: Date.now(), level, message, source });
+  if (logBuffer.length > MAX_LOG_BUFFER) logBuffer.shift();
+  if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+    mainWindowRef.webContents.send(IPC.LOG_ENTRY, {
+      timestamp: Date.now(),
+      level,
+      message,
+      source,
+    });
+  }
+}
 
 const SESSIONS_FILE = join(app.getPath('userData'), 'sessions.json');
 const MCP_SERVERS_FILE = join(app.getPath('userData'), 'mcp-servers.json');
@@ -396,7 +416,31 @@ function debouncedInit() {
 }
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
+  mainWindowRef = mainWindow;
   agentService.setMainWindow(mainWindow);
+
+  // Override global console methods to also forward logs to the renderer
+  const origLog = console.log;
+  const origWarn = console.warn;
+  const origError = console.error;
+  const origDebug = console.debug;
+
+  console.log = (...args: unknown[]) => {
+    origLog.apply(console, args);
+    sendLog('info', args.map(String).join(' '));
+  };
+  console.warn = (...args: unknown[]) => {
+    origWarn.apply(console, args);
+    sendLog('warn', args.map(String).join(' '));
+  };
+  console.error = (...args: unknown[]) => {
+    origError.apply(console, args);
+    sendLog('error', args.map(String).join(' '));
+  };
+  console.debug = (...args: unknown[]) => {
+    origDebug.apply(console, args);
+    sendLog('debug', args.map(String).join(' '));
+  };
 
   [
     IPC.CONFIG_GET,
@@ -448,6 +492,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     IPC.COLLABORATION_LIST,
     IPC.SUPERVISOR_GET_VIOLATIONS,
     IPC.SUPERVISOR_SET_ENABLED,
+    IPC.CONSOLE_GET_LOGS,
   ].forEach((channel) => ipcMain.removeHandler(channel));
 
   [IPC.WINDOW_MINIMIZE, IPC.WINDOW_MAXIMIZE, IPC.WINDOW_CLOSE, IPC.AGENT_STOP].forEach((channel) => {
@@ -461,8 +506,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
     // Save config to disk
     saveConfig(currentConfig);
+    sendLog('info', `Config updated: ${key}`, 'Config');
 
     if (['apiKey', 'apiBase', 'model', 'permissionMode', 'toolPreset', 'maxTurns', 'temperature', 'sandboxEnabled', 'reasoningEffort'].includes(key)) {
+      sendLog('info', `Reinitializing agent due to config change: ${key}`, 'Config');
       debouncedInit();
     }
 
@@ -515,6 +562,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     sessions.push(session);
     activeSessionId = session.id;
     saveSessionsToDisk(sessions);
+    sendLog('info', `Session created: ${session.name} (${session.id})`, 'Session');
     return session;
   });
   ipcMain.handle(IPC.SESSION_SWITCH, (_, id: string) => {
@@ -527,6 +575,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       // If workspace changed, reinitialize agent with new workspace
       if (newWorkspace !== oldWorkspace && currentConfig.apiKey) {
         console.log('[IPC] Session switched, workspace changed, reinitializing agent...');
+        sendLog('info', `Session switched to ${id}, workspace changed, reinitializing agent`, 'Session');
         debouncedInit();
       }
       return session;
@@ -541,6 +590,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       if (sessions.length === 0) sessions = [createDefaultSession()];
       if (activeSessionId === id) activeSessionId = sessions[0].id;
       saveSessionsToDisk(sessions);
+      sendLog('info', `Session deleted: ${id}`, 'Session');
     }
   });
   ipcMain.handle(IPC.SESSION_RENAME, (_, id: string, name: string) => {
@@ -583,20 +633,28 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.AGENT_RUN, async (_, prompt: string) => {
     try {
       const ws = getCurrentWorkspace();
-      if (currentConfig.apiKey) await agentService.initialize({ ...currentConfig }, ws);
+      sendLog('info', 'Agent run started', 'Agent');
+      if (currentConfig.apiKey) {
+        sendLog('info', 'Initializing agent service', 'Agent');
+        await agentService.initialize({ ...currentConfig }, ws);
+      }
       await agentService.run(prompt, ws);
+      sendLog('info', 'Agent run completed', 'Agent');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       console.error('[IPC] Agent error:', message);
+      sendLog('error', `Agent error: ${message}`, 'Agent');
       mainWindow.webContents.send(IPC.AGENT_ERROR, message);
     }
   });
 
   ipcMain.on(IPC.AGENT_STOP, () => {
+    sendLog('info', 'Agent stop requested', 'Agent');
     agentService.stop();
   });
 
   ipcMain.handle(IPC.AGENT_CLEAR, () => {
+    sendLog('info', 'Agent conversation cleared', 'Agent');
     agentService.clear();
   });
 
@@ -757,12 +815,14 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const newServer: McpServerConfig = { ...server, id: generateId(), enabled: true };
     servers.push(newServer);
     saveMcpServers(servers);
+    sendLog('info', `MCP server added: ${server.name || server.command}`, 'MCP');
     return newServer;
   });
 
   ipcMain.handle(IPC.MCP_SERVERS_REMOVE, async (_event, id: string) => {
     const servers = loadMcpServers().filter(s => s.id !== id);
     saveMcpServers(servers);
+    sendLog('info', `MCP server removed: ${id}`, 'MCP');
     return { success: true };
   });
 
@@ -872,6 +932,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const rule = rules.find(r => r.id === id);
     if (!rule) return { success: false, error: '规则不存在' };
 
+    sendLog('info', `Running automation rule: ${rule.name} (${rule.id})`, 'Automation');
+
     const startTime = Date.now();
     try {
       if (rule.action.type === 'run-prompt') {
@@ -942,7 +1004,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // === TTS (via Chat Completions with audio modality) ===
   ipcMain.handle(IPC.TTS_GENERATE, async (_event, params: { text: string; model: string; voice?: string; speed?: number; thinkingIntensity?: string }) => {
     try {
-      const { text, model, voice, speed, thinkingIntensity } = params;
+      const { text, model, voice, speed: _speed, thinkingIntensity } = params;
       if (!text?.trim()) return { success: false, error: '请输入要转换的文本' };
 
       const apiBase = currentConfig.apiBase;
@@ -1082,21 +1144,67 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.SKILLS_ACTIVATE, (_event, skillId: string) => {
     // Activate a skill (could trigger tool loading, etc.)
     console.log('[Skills] Activating skill:', skillId);
+    sendLog('info', `Activating skill: ${skillId}`, 'Skills');
     return { success: true, skillId };
   });
 
   // === System Info ===
   ipcMain.handle(IPC.SYSTEM_GET_INFO, async () => {
-    const os = await import('os');
-    return {
-      platform: os.platform(),
-      arch: os.arch(),
-      hostname: os.hostname(),
-      cpus: os.cpus().length,
-      totalMemory: os.totalmem(),
-      freeMemory: os.freemem(),
-      uptime: os.uptime(),
-    };
+    // CPU usage: sample twice over 100ms and compute busy fraction
+    const cpus1 = os.cpus();
+    await new Promise((r) => setTimeout(r, 100));
+    const cpus2 = os.cpus();
+
+    let totalIdleDelta = 0;
+    let totalDelta = 0;
+    for (let i = 0; i < cpus1.length; i++) {
+      const t1 = cpus1[i].times;
+      const t2 = cpus2[i].times;
+      const idleDelta = t2.idle - t1.idle;
+      const total =
+        (t2.user - t1.user) +
+        (t2.nice - t1.nice) +
+        (t2.sys - t1.sys) +
+        (t2.idle - t1.idle) +
+        (t2.irq - t1.irq);
+      totalIdleDelta += idleDelta;
+      totalDelta += total;
+    }
+    const cpuUsage = totalDelta > 0 ? ((totalDelta - totalIdleDelta) / totalDelta) * 100 : 0;
+
+    // Memory
+    const totalMemBytes = os.totalmem();
+    const freeMemBytes = os.freemem();
+    const memoryTotal = totalMemBytes / (1024 ** 3);
+    const memoryUsage = (totalMemBytes - freeMemBytes) / (1024 ** 3);
+
+    // Disk usage (Windows: wmic logicaldisk)
+    let diskUsage = 0;
+    try {
+      const drive = process.env.SystemDrive || 'C:';
+      const output = execSync(
+        `wmic logicaldisk where "DeviceID='${drive}'" get Size,FreeSpace /format:csv`,
+        { encoding: 'utf-8', timeout: 5000 }
+      );
+      const lines = output.trim().split('\n').filter(Boolean);
+      // CSV output: Node,FreeSpace,Size — last non-empty line has data
+      const dataLine = lines[lines.length - 1];
+      if (dataLine) {
+        const parts = dataLine.split(',');
+        const freeSpace = parseInt(parts[1], 10);
+        const size = parseInt(parts[2], 10);
+        if (size > 0) {
+          diskUsage = ((size - freeSpace) / size) * 100;
+        }
+      }
+    } catch {
+      // disk usage stays 0 if unavailable
+    }
+
+    // Uptime in milliseconds
+    const uptime = os.uptime() * 1000;
+
+    return { cpuUsage, memoryUsage, memoryTotal, diskUsage, uptime };
   });
 
   // === Collaboration ===
@@ -1114,6 +1222,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.SUPERVISOR_SET_ENABLED, (_event, enabled: boolean) => {
     supervisorEnabled = enabled;
     console.log('[Supervisor] Enabled:', enabled);
+    sendLog('info', `Supervisor ${enabled ? 'enabled' : 'disabled'}`, 'Supervisor');
     return { success: true, enabled };
   });
+
+  // === Console Log Buffer ===
+  ipcMain.handle(IPC.CONSOLE_GET_LOGS, () => logBuffer);
 }

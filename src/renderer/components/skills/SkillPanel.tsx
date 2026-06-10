@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Search, Code, Shuffle, Bug, TestTube, FileText, GitBranch, Layout, Zap } from 'lucide-react';
+import { Sparkles, Search, Code, Shuffle, Bug, TestTube, FileText, GitBranch, Layout, Zap, X } from 'lucide-react';
 import { useT } from '../../i18n';
+import { useToast } from '../common/Toast';
 
 interface Skill {
   id: string;
@@ -21,18 +22,26 @@ const ICON_MAP: Record<string, React.ComponentType<{ size?: number; strokeWidth?
   Search, Code, Shuffle, Bug, TestTube, FileText, GitBranch, Layout, Zap,
 };
 
-export function SkillPanel() {
+interface SkillPanelProps {
+  onClose: () => void;
+}
+
+export function SkillPanel({ onClose }: SkillPanelProps) {
   const t = useT();
+  const { toast } = useToast();
   const [skills, setSkills] = useState<Skill[]>([]);
   const [matches, setMatches] = useState<SkillMatch[]>([]);
   const [searchInput, setSearchInput] = useState('');
   const [activeSkill, setActiveSkill] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
 
   useEffect(() => {
     loadSkills();
   }, []);
 
   const loadSkills = async () => {
+    setIsLoading(true);
     try {
       const result = await window.api?.skills?.list();
       if (result?.skills) {
@@ -40,14 +49,20 @@ export function SkillPanel() {
       }
     } catch (err) {
       console.error('Failed to load skills:', err);
+      toast('加载技能失败', 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleSearch = async () => {
     if (!searchInput.trim()) {
       setMatches([]);
+      setHasSearched(false);
       return;
     }
+    setIsLoading(true);
+    setHasSearched(true);
     try {
       const result = await window.api?.skills?.match(searchInput);
       if (result?.matches) {
@@ -55,6 +70,9 @@ export function SkillPanel() {
       }
     } catch (err) {
       console.error('Failed to match skills:', err);
+      toast('搜索失败', 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -71,11 +89,16 @@ export function SkillPanel() {
     <div className="flex flex-col h-full" style={{ background: 'var(--bg-base)' }}>
       {/* Header */}
       <div className="p-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
-        <div className="flex items-center gap-2 mb-3">
-          <Sparkles size={18} strokeWidth={1.7} style={{ color: 'var(--accent)' }} />
-          <h2 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-            {t('skills.title') || '智能技能'}
-          </h2>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Sparkles size={18} strokeWidth={1.7} style={{ color: 'var(--accent)' }} />
+            <h2 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              {t('skills.title') || '智能技能'}
+            </h2>
+          </div>
+          <button onClick={onClose} className="icon-button" title={t('common.close') || '关闭'}>
+            <X size={16} />
+          </button>
         </div>
 
         {/* Search */}
@@ -98,19 +121,31 @@ export function SkillPanel() {
           />
           <button
             onClick={handleSearch}
+            disabled={isLoading}
             style={{
               background: 'var(--accent)',
               color: 'white',
               borderRadius: 8,
               padding: '8px 12px',
               border: 'none',
-              cursor: 'pointer',
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              opacity: isLoading ? 0.6 : 1,
             }}
           >
-            <Search size={16} />
+            {isLoading ? '...' : <Search size={16} />}
           </button>
         </div>
       </div>
+
+      {/* No Matches */}
+      {hasSearched && matches.length === 0 && !isLoading && (
+        <div className="p-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+          <div className="flex items-center justify-center gap-2 py-3" style={{ color: 'var(--text-muted)' }}>
+            <Search size={14} />
+            <span className="text-sm">未找到匹配的技能</span>
+          </div>
+        </div>
+      )}
 
       {/* Matched Skills */}
       {matches.length > 0 && (
@@ -170,6 +205,11 @@ export function SkillPanel() {
           {t('skills.allSkills') || '所有技能'}
         </h3>
         <div className="flex flex-col gap-2">
+          {isLoading && skills.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)' }}>
+              <span style={{ animation: 'pulse 1.5s ease-in-out infinite' }}>加载中...</span>
+            </div>
+          )}
           {skills.map((skill) => {
             const Icon = getIcon(skill.icon);
             return (

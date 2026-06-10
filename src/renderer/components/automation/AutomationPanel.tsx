@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { X, Plus, Trash2, Play, Clock3, Zap, CheckCircle, XCircle, ToggleLeft, ToggleRight } from 'lucide-react';
 import type { AutomationRule, AutomationExecution } from '../../../shared/types';
 import { useT } from '../../i18n';
+import { useToast } from '../common/Toast';
 
 interface AutomationPanelProps {
   onClose: () => void;
@@ -9,11 +10,16 @@ interface AutomationPanelProps {
 
 export function AutomationPanel({ onClose }: AutomationPanelProps) {
   const t = useT();
+  const { toast } = useToast();
   const [rules, setRules] = useState<AutomationRule[]>([]);
   const [executions, setExecutions] = useState<AutomationExecution[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [runningRuleId, setRunningRuleId] = useState<string | null>(null);
+  const [togglingRuleId, setTogglingRuleId] = useState<string | null>(null);
+  const [removingRuleId, setRemovingRuleId] = useState<string | null>(null);
+  const [isAddingTemplate, setIsAddingTemplate] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -35,6 +41,7 @@ export function AutomationPanel({ onClose }: AutomationPanelProps) {
 
   const handleToggleRule = async (id: string, enabled: boolean) => {
     setError(null);
+    setTogglingRuleId(id);
     try {
       await window.api.automation.toggleRule(id, enabled);
       setRules((prev) => prev.map((r) => (r.id === id ? { ...r, enabled } : r)));
@@ -42,6 +49,8 @@ export function AutomationPanel({ onClose }: AutomationPanelProps) {
       setTimeout(() => setSuccessMsg(null), 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error.toggleRuleFailed'));
+    } finally {
+      setTogglingRuleId(null);
     }
   };
 
@@ -49,30 +58,42 @@ export function AutomationPanel({ onClose }: AutomationPanelProps) {
     const rule = rules.find((r) => r.id === id);
     if (!confirm(t('automation.confirmDelete', { name: rule?.name || id }))) return;
     setError(null);
+    setRemovingRuleId(id);
     try {
       await window.api.automation.removeRule(id);
       setRules((prev) => prev.filter((r) => r.id !== id));
+      toast('规则已删除', 'success');
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error.deleteRuleFailed'));
+    } finally {
+      setRemovingRuleId(null);
     }
   };
 
   const handleRunRule = async (id: string) => {
     setError(null);
+    setRunningRuleId(id);
     try {
       const result = await window.api.automation.runRule(id);
       if (result && !result.success) {
         setError(result.error || t('error.runRuleFailed'));
+        toast('规则执行失败', 'error');
+      } else {
+        toast('规则执行成功', 'success');
       }
       const execList = await window.api.automation.getExecutions();
       setExecutions(execList || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error.runRuleFailed'));
+      toast('规则执行失败', 'error');
+    } finally {
+      setRunningRuleId(null);
     }
   };
 
   const handleAddFromTemplate = async (template: { name: string; trigger: AutomationRule['trigger']; action: AutomationRule['action'] }) => {
     setError(null);
+    setIsAddingTemplate(true);
     try {
       await window.api.automation.addRule(template);
       await loadData();
@@ -80,6 +101,8 @@ export function AutomationPanel({ onClose }: AutomationPanelProps) {
       setTimeout(() => setSuccessMsg(null), 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error.addRuleFailed'));
+    } finally {
+      setIsAddingTemplate(false);
     }
   };
 
@@ -148,10 +171,11 @@ export function AutomationPanel({ onClose }: AutomationPanelProps) {
                   <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, background: 'var(--bg-app)' }}>
                     <button
                       onClick={() => handleToggleRule(rule.id, !rule.enabled)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: rule.enabled ? 'var(--accent)' : 'var(--text-muted)' }}
-                      title={rule.enabled ? t('automation.disable') : t('automation.enable')}
+                      disabled={togglingRuleId === rule.id}
+                      style={{ background: 'none', border: 'none', cursor: togglingRuleId === rule.id ? 'not-allowed' : 'pointer', padding: 0, display: 'flex', color: rule.enabled ? 'var(--accent)' : 'var(--text-muted)', opacity: togglingRuleId === rule.id ? 0.5 : 1 }}
+                      title={togglingRuleId === rule.id ? '处理中...' : rule.enabled ? t('automation.disable') : t('automation.enable')}
                     >
-                      {rule.enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+                      {togglingRuleId === rule.id ? '...' : rule.enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
                     </button>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12, fontWeight: 500, color: rule.enabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>{rule.name}</div>
@@ -161,10 +185,22 @@ export function AutomationPanel({ onClose }: AutomationPanelProps) {
                         <span>{ACTION_LABELS[rule.action.type] || rule.action.type}</span>
                       </div>
                     </div>
-                    <button className="icon-button" onClick={() => handleRunRule(rule.id)} title={t('automation.runNow')} disabled={!rule.enabled}>
-                      <Play size={13} />
+                    <button
+                      className="icon-button"
+                      onClick={() => handleRunRule(rule.id)}
+                      title={runningRuleId === rule.id ? '运行中...' : t('automation.runNow')}
+                      disabled={!rule.enabled || runningRuleId === rule.id}
+                      style={{ opacity: runningRuleId === rule.id ? 0.6 : 1 }}
+                    >
+                      <Play size={13} style={runningRuleId === rule.id ? { animation: 'spin 1s linear infinite' } : undefined} />
                     </button>
-                    <button className="icon-button danger" onClick={() => handleRemoveRule(rule.id)} title={t('common.delete')}>
+                    <button
+                      className="icon-button danger"
+                      onClick={() => handleRemoveRule(rule.id)}
+                      disabled={removingRuleId === rule.id}
+                      title={removingRuleId === rule.id ? '处理中...' : t('common.delete')}
+                      style={{ opacity: removingRuleId === rule.id ? 0.5 : 1, cursor: removingRuleId === rule.id ? 'not-allowed' : 'pointer' }}
+                    >
                       <Trash2 size={13} />
                     </button>
                   </div>
@@ -184,9 +220,11 @@ export function AutomationPanel({ onClose }: AutomationPanelProps) {
                 <button
                   key={tpl.name}
                   onClick={() => handleAddFromTemplate(tpl)}
+                  disabled={isAddingTemplate}
                   className="template-card"
+                  style={{ opacity: isAddingTemplate ? 0.5 : 1, cursor: isAddingTemplate ? 'not-allowed' : 'pointer' }}
                 >
-                  <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>{tpl.name}</span>
+                  <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>{isAddingTemplate ? '处理中...' : tpl.name}</span>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{TRIGGER_LABELS[tpl.trigger.type]}</span>
                 </button>
               ))}

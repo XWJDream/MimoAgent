@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Play, Pause, CheckCircle, XCircle, Clock, ArrowRight, ChevronDown, ChevronRight } from 'lucide-react';
+import { Users, Play, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight } from 'lucide-react';
 import { useT } from '../../i18n';
 
 interface AgentTask {
@@ -42,6 +42,7 @@ export function CollaborationPanel() {
   const t = useT();
   const [collaborations, setCollaborations] = useState<AgentCollaboration[]>([]);
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+  const [isMockData, setIsMockData] = useState(false);
 
   useEffect(() => {
     loadCollaborations();
@@ -70,6 +71,7 @@ export function CollaborationPanel() {
           ],
         },
       ]);
+      setIsMockData(true);
     }
   };
 
@@ -212,6 +214,16 @@ export function CollaborationPanel() {
           <h2 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
             {t('collaboration.title') || '多 Agent 协同'}
           </h2>
+          {isMockData && (
+            <span style={{
+              padding: '2px 6px',
+              borderRadius: 4,
+              background: 'var(--warning)',
+              color: 'white',
+              fontSize: 10,
+              fontWeight: 600,
+            }}>演示数据</span>
+          )}
         </div>
       </div>
 

@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Folder, FolderOpen, GitBranch, MessageSquare, Plus, Search, Settings, Sparkles, Clock3, X, Volume2, Edit3, Zap, Terminal, Users, Shield } from 'lucide-react';
+import { Folder, FolderOpen, GitBranch, MessageSquare, Plus, Search, Settings, Sparkles, Clock3, X, Volume2, Edit3, Zap, Terminal, Shield } from 'lucide-react';
 import { useChatStore } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useT } from '../../i18n';
+import { useToast } from '../common/Toast';
 
 interface SidebarProps {
   onOpenSettings: () => void;
@@ -14,10 +15,12 @@ interface SidebarProps {
 
 export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentView }: SidebarProps) {
   const t = useT();
+  const { toast } = useToast();
   const { sessions, activeSessionId, setSessions, setActiveSession, addSession, removeSession, renameSession, setSessionWorkspace } = useSessionStore();
   const switchSession = useChatStore((s) => s.switchSession);
   const clearMessages = useChatStore((s) => s.clearMessages);
   const model = useConfigStore((s) => s.config.model);
+  const [isCreating, setIsCreating] = useState(false);
 
   function basename(path?: string) {
     if (!path) return t('sidebar.noProject');
@@ -56,11 +59,17 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
   };
 
   const handleFinishRename = () => {
-    if (editingSessionId && editingName.trim()) {
-      renameSession(editingSessionId, editingName.trim());
+    try {
+      if (editingSessionId && editingName.trim()) {
+        renameSession(editingSessionId, editingName.trim());
+      }
+    } catch (err) {
+      toast(t('sidebar.renameFailed') || 'Rename failed', 'error');
+      console.error('Rename failed:', err);
+    } finally {
+      setEditingSessionId(null);
+      setEditingName('');
     }
-    setEditingSessionId(null);
-    setEditingName('');
   };
 
   const handleCancelRename = () => {
@@ -69,13 +78,22 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
   };
 
   const handleNewChat = async () => {
-    const workspace = await window.api.workspace.select();
-    if (!workspace) return;
-    const session = await window.api.session.create(t('sidebar.sessionName', { count: sessions.length + 1 }), workspace.path);
-    addSession(session);
-    setActiveSession(session.id);
-    clearMessages(session.id);
-    onOpenView('chat');
+    if (isCreating) return;
+    setIsCreating(true);
+    try {
+      const workspace = await window.api.workspace.select();
+      if (!workspace) return;
+      const session = await window.api.session.create(t('sidebar.sessionName', { count: sessions.length + 1 }), workspace.path);
+      addSession(session);
+      setActiveSession(session.id);
+      clearMessages(session.id);
+      onOpenView('chat');
+    } catch (err) {
+      toast(t('sidebar.createFailed') || 'Failed to create session', 'error');
+      console.error('Create session failed:', err);
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   useEffect(() => {
@@ -100,20 +118,30 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
   }, [handleNewChat]);
 
   const handleSwitchSession = async (id: string) => {
-    setActiveSession(id);
-    switchSession(id);
-    onOpenView('chat');
-    await window.api.session.switch(id);
+    try {
+      await window.api.session.switch(id);
+      setActiveSession(id);
+      switchSession(id);
+      onOpenView('chat');
+    } catch (err) {
+      toast(t('sidebar.switchFailed') || 'Failed to switch session', 'error');
+      console.error('Switch session failed:', err);
+    }
   };
 
   const handleSelectFolder = async () => {
     if (!activeSession) return;
-    const workspace = await window.api.workspace.select();
-    if (!workspace) return;
-    const updated = await window.api.session.setWorkspace(activeSession.id, workspace.path);
-    setSessionWorkspace(activeSession.id, workspace);
-    if (updated) {
-      setSessions(sessions.map((session) => (session.id === updated.id ? updated : session)));
+    try {
+      const workspace = await window.api.workspace.select();
+      if (!workspace) return;
+      const updated = await window.api.session.setWorkspace(activeSession.id, workspace.path);
+      setSessionWorkspace(activeSession.id, workspace);
+      if (updated) {
+        setSessions(sessions.map((session) => (session.id === updated.id ? updated : session)));
+      }
+    } catch (err) {
+      toast(t('sidebar.selectFolderFailed') || 'Failed to select folder', 'error');
+      console.error('Select folder failed:', err);
     }
   };
 
@@ -262,11 +290,18 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
                         size={12}
                         strokeWidth={1.5}
                         className="session-delete-btn"
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation();
                           if (confirm(t('sidebar.confirmDelete', { name: session.name }))) {
+                            const snapshot = sessions;
                             removeSession(session.id);
-                            window.api?.session.delete(session.id);
+                            try {
+                              await window.api?.session.delete(session.id);
+                            } catch (err) {
+                              toast(t('sidebar.deleteFailed') || 'Failed to delete session', 'error');
+                              console.error('Delete session failed:', err);
+                              setSessions(snapshot);
+                            }
                           }
                         }}
                       />

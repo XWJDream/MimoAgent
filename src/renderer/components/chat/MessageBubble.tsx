@@ -5,7 +5,7 @@ import type { Message } from '@shared/types';
 import { highlightCode } from '../../lib/highlighter';
 import { useChatStore } from '../../stores/chatStore';
 import { Pencil, RotateCcw, Copy, Check } from 'lucide-react';
-import { useT, t } from '../../i18n';
+import { useT } from '../../i18n';
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -23,7 +23,7 @@ export function MessageBubble({ message, isStreaming, onResend }: MessageBubbleP
   const t = useT();
   const isUser = message.role === 'user';
   const isTool = message.role === 'tool';
-  const isSystem = message.role === 'system';
+  const _isSystem = message.role === 'system';
   const contentRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);

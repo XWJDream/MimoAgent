@@ -11,7 +11,7 @@ export function MessageList() {
   const currentResponse = useChatStore((s) => s.currentResponse);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const { sessions, activeSessionId } = useSessionStore();
-  const activeSession = sessions.find((s) => s.id === activeSessionId);
+  const _activeSession = sessions.find((s) => s.id === activeSessionId);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const suggestions = useMemo(() => [
