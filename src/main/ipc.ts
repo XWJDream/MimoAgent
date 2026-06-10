@@ -29,6 +29,7 @@ const MAX_LOG_BUFFER = 200;
 const collaborationTasks: CollaborationTask[] = [];
 const MAX_COLLABORATION_TASKS = 50;
 
+
 function sendLog(level: 'info' | 'warn' | 'error' | 'debug', message: string, source?: string) {
   logBuffer.push({ timestamp: Date.now(), level, message, source });
   if (logBuffer.length > MAX_LOG_BUFFER) logBuffer.shift();
