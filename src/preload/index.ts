@@ -62,6 +62,7 @@ const IPC = {
   SKILLS_ACTIVATE: 'skills:activate',
   SYSTEM_GET_INFO: 'system:get-info',
   COLLABORATION_LIST: 'collaboration:list',
+  COLLABORATION_UPDATE: 'collaboration:update',
   SUPERVISOR_GET_VIOLATIONS: 'supervisor:get-violations',
   SUPERVISOR_SET_ENABLED: 'supervisor:set-enabled',
 
@@ -223,6 +224,11 @@ const api = {
   // Collaboration
   collaboration: {
     list: () => ipcRenderer.invoke(IPC.COLLABORATION_LIST),
+    onUpdate: (cb: (task: unknown) => void) => {
+      const handler = (_: unknown, task: unknown) => cb(task);
+      ipcRenderer.on(IPC.COLLABORATION_UPDATE, handler);
+      return () => ipcRenderer.removeListener(IPC.COLLABORATION_UPDATE, handler);
+    },
   },
 
   // Supervisor
@@ -243,7 +249,7 @@ const api = {
     return () => ipcRenderer.removeListener(channel, handler);
   },
   off: (channel: string, cb: (...args: unknown[]) => void) => {
-    ipcRenderer.removeListener(channel, cb as any);
+    ipcRenderer.removeListener(channel, cb as (...args: unknown[]) => void);
   },
 
   // Permission

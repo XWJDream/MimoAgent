@@ -27,7 +27,7 @@ app.whenReady().then(() => {
   protocol.handle('tts-audio', (request) => {
     const id = request.url.replace('tts-audio://', '').replace(/\/$/, '');
     const buf = ttsAudioStore.get(id);
-    console.log('[tts-audio] id:', id, 'found:', !!buf, 'size:', buf?.length);
+    console.debug('[tts-audio] id:', id, 'found:', !!buf, 'size:', buf?.length);
     if (!buf) return new Response('Not found', { status: 404 });
     // Return as Blob with correct MIME type
     const blob = new Blob([new Uint8Array(buf)], { type: 'audio/wav' });

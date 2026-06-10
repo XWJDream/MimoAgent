@@ -40,7 +40,7 @@ export function ToolCard({ tool }: ToolCardProps) {
           )}
           {showDiff ? (
             <DiffViewer
-              diff={tool.output!}
+              diff={tool.output as string}
               title={isEditTool ? (tool.args.path as string || tool.args.file_path as string) : undefined}
             />
           ) : tool.output ? (

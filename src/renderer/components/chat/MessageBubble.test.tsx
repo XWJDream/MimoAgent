@@ -138,6 +138,7 @@ describe('MessageBubble - assistant message', () => {
 
     const bold = container.querySelector('strong');
     expect(bold).toBeInTheDocument();
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(bold!.textContent).toBe('bold text');
   });
 
@@ -153,6 +154,7 @@ describe('MessageBubble - assistant message', () => {
 
     const code = container.querySelector('code');
     expect(code).toBeInTheDocument();
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(code!.textContent).toContain('const x = 1');
   });
 });
@@ -185,6 +187,7 @@ describe('MessageBubble - tool message', () => {
 
     const pre = container.querySelector('pre');
     expect(pre).toBeInTheDocument();
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(pre!.textContent).toBe('file contents here');
   });
 

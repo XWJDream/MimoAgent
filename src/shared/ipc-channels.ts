@@ -72,8 +72,10 @@ export const IPC = {
 
   SYSTEM_GET_INFO: 'system:get-info',
   COLLABORATION_LIST: 'collaboration:list',
+  COLLABORATION_UPDATE: 'collaboration:update',
   SUPERVISOR_GET_VIOLATIONS: 'supervisor:get-violations',
   SUPERVISOR_SET_ENABLED: 'supervisor:set-enabled',
+  SUPERVISOR_VIOLATION: 'supervisor:violation',
 
   CONSOLE_GET_LOGS: 'console:get-logs',
   LOG_ENTRY: 'log:entry',

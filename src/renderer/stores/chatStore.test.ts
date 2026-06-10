@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useChatStore } from './chatStore';
 import type { UsageStats } from '@shared/types';

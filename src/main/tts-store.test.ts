@@ -21,6 +21,7 @@ describe('tts-store', () => {
     setAudio('id-2', buffer);
     const result = getAudio('id-2');
     expect(result).toBeDefined();
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(Buffer.compare(result!, buffer)).toBe(0);
   });
 
@@ -43,7 +44,9 @@ describe('tts-store', () => {
     setAudio('wav-id', data);
     const result = getAudio('wav-id');
     expect(result).toBeDefined();
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(result!.length).toBe(4);
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(result![0]).toBe(0x52);
   });
 
