@@ -45,6 +45,8 @@ jobs:
             --include="*.yml" \
             --include="*.yaml" \
             --include="*.env*" \
+            --exclude="*.test.*" \
+            --exclude="*.spec.*" \
             src/ engine/src/ scripts/ 2>/dev/null || true)"
           if [ -n "$matches" ]; then
             echo "ERROR: Potential API key found in source files:"

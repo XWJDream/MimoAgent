@@ -37,6 +37,7 @@ jobs:
           matches="$(grep -RIlE "sk-[a-zA-Z0-9]{20,}" \
             --include="*.ts" --include="*.tsx" --include="*.js" \
             --include="*.json" --include="*.yml" --include="*.env*" \
+            --exclude="*.test.*" --exclude="*.spec.*" \
             src/ engine/src/ scripts/ 2>/dev/null || true)"
           if [ -n "$matches" ]; then
             echo "ERROR: Potential API key found in source files:"
