@@ -33,6 +33,7 @@ export interface IpcChannels {
   'file:read': (path: string) => string;
   'file:write': (path: string, content: string) => void;
   'file:dialog': () => string | null;
+  'file:attachments-pick': () => ChatAttachment[];
 
   // Shell
   'shell:exec': (command: string) => ShellResult;
@@ -55,7 +56,7 @@ export interface AppConfig {
   maxTurns: number;
   temperature: number;
   reasoningEffort: 'low' | 'medium' | 'high';
-  theme: 'dark' | 'light';
+  theme: 'dark' | 'light' | 'sakura';
   selectedAvatarId: string;
   sandboxEnabled: boolean;
 }
@@ -75,6 +76,14 @@ export interface FileTreeNode {
   path: string;
   type: 'file' | 'directory';
   children?: FileTreeNode[];
+}
+
+export interface ChatAttachment {
+  name: string;
+  path: string;
+  size: number;
+  kind: 'image' | 'text' | 'file';
+  content?: string;
 }
 
 export interface Session {

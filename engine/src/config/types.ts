@@ -1,5 +1,7 @@
 export type PermissionMode = 'suggest' | 'auto-edit' | 'full-auto';
 
+export type AgentMode = 'build' | 'plan' | 'explore';
+
 export interface SandboxConfig {
   enabled: boolean;
   image: string;
@@ -32,6 +34,7 @@ export interface MimoConfig {
   reasoningEffort?: 'low' | 'medium' | 'high';
   contextWindow: number;
   permissionMode: PermissionMode;
+  agentMode?: AgentMode;
   toolPreset?: ToolPreset;
   pathPermissionRules?: PathPermissionRule[];
   allowedTools: string[];

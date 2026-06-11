@@ -8,6 +8,7 @@ export const IPC = {
   AGENT_DONE: 'agent:done',
   AGENT_ERROR: 'agent:error',
   AGENT_THINKING: 'agent:thinking',
+  AGENT_CONTEXT_PRESSURE: 'agent:context-pressure',
 
   CONFIG_GET: 'config:get',
   CONFIG_SET: 'config:set',
@@ -31,6 +32,7 @@ export const IPC = {
   FILE_READ: 'file:read',
   FILE_WRITE: 'file:write',
   FILE_DIALOG: 'file:dialog',
+  FILE_ATTACHMENTS_PICK: 'file:attachments-pick',
 
   SHELL_EXEC: 'shell:exec',
 
@@ -40,6 +42,8 @@ export const IPC = {
 
   MEMORY_GET: 'memory:get',
   MEMORY_SET: 'memory:set',
+  MEMORY_SEARCH: 'memory:search',
+  MEMORY_RECONCILE: 'memory:reconcile',
   COMPACT: 'conversation:compact',
   PERMISSION_REQUEST: 'permission:request',
   PERMISSION_RESPONSE: 'permission:response',

@@ -14,32 +14,34 @@ export function ChatPanel() {
   return (
     <section className="chat-workbench flex min-h-0 flex-1 flex-col overflow-hidden bg-workspace">
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="min-w-0 flex-1 overflow-hidden">
-          <MessageList />
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <MessageList />
+          </div>
+          {(isThinking || isStreaming) && <ThinkingIndicator />}
+          <div className="relative">
+            <InputArea />
+            {toolCalls.length > 0 && (
+              <button
+                className="xl:hidden"
+                onClick={() => setToolPanelOpen((prev) => !prev)}
+                style={{
+                  position: 'absolute', top: -32, right: 12,
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  fontSize: 11, color: runningTools > 0 ? 'var(--accent)' : 'var(--text-muted)',
+                  background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
+                  borderRadius: 6, padding: '3px 8px', cursor: 'pointer',
+                }}
+                title="切换工具面板"
+              >
+                <Wrench size={12} />
+                {toolCalls.length}
+                {runningTools > 0 && <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--accent)', animation: 'pulse-dot 2s ease-in-out infinite' }} />}
+              </button>
+            )}
+          </div>
         </div>
         <ToolPanel forceOpen={toolPanelOpen} />
-      </div>
-      {(isThinking || isStreaming) && <ThinkingIndicator />}
-      <div className="relative">
-        <InputArea />
-        {toolCalls.length > 0 && (
-          <button
-            className="xl:hidden"
-            onClick={() => setToolPanelOpen((prev) => !prev)}
-            style={{
-              position: 'absolute', top: -32, right: 12,
-              display: 'flex', alignItems: 'center', gap: 4,
-              fontSize: 11, color: runningTools > 0 ? 'var(--accent)' : 'var(--text-muted)',
-              background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
-              borderRadius: 6, padding: '3px 8px', cursor: 'pointer',
-            }}
-            title="切换工具面板"
-          >
-            <Wrench size={12} />
-            {toolCalls.length}
-            {runningTools > 0 && <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--accent)', animation: 'pulse-dot 2s ease-in-out infinite' }} />}
-          </button>
-        )}
       </div>
     </section>
   );

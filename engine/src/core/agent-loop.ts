@@ -7,6 +7,8 @@ import type { PermissionChecker } from '../permissions/checker.js';
 import type { ToolResult } from '../tools/base.js';
 import { createValidator, type ValidationOptions, type ValidationResult } from './validator.js';
 import { estimateMessageTokens, estimateTokens } from '../llm/tokenizer.js';
+import { pressureLevel as calcPressure, type OverflowInput } from '../context/overflow.js';
+import { microcompact } from '../context/compaction.js';
 
 export interface AgentHooks {
   beforeTool?: (name: string, args: Record<string, unknown>) => Promise<{ skip?: boolean; modifiedArgs?: Record<string, unknown> } | void>;
@@ -20,7 +22,8 @@ export type LoopEvent =
   | { type: 'validation'; tool: string; result: ValidationResult }
   | { type: 'reflection'; prompt: string }
   | { type: 'done'; usage?: { prompt: number; completion: number; total: number } }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  | { type: 'context_pressure'; level: 0 | 1 | 2 | 3; usable: number; current: number };
 
 export interface AgentLoopOptions {
   maxTurns: number;
@@ -32,6 +35,10 @@ export interface AgentLoopOptions {
   onUsage?: (promptTokens: number, completionTokens: number, cachedTokens?: number) => void;
   hooks?: AgentHooks;
   validation?: ValidationOptions;
+  /** Model context window size for pressure detection */
+  contextWindow?: number;
+  /** Model max output tokens for pressure detection */
+  maxOutputTokens?: number;
 }
 
 export async function* agentLoop(
@@ -127,6 +134,39 @@ export async function* agentLoop(
 
     if (promptTokens > 0 || completionTokens > 0) {
       options.onUsage?.(promptTokens, completionTokens, cachedTokens);
+    }
+
+    // --- Context pressure detection ---
+    if (options.contextWindow && options.contextWindow > 0 && promptTokens > 0) {
+      const overflowInput: OverflowInput = {
+        contextWindow: options.contextWindow,
+        maxOutputTokens: options.maxOutputTokens ?? 4096,
+        currentTokens: promptTokens,
+      }
+      const level = calcPressure(overflowInput)
+      const usableTokens = overflowInput.contextWindow > 0
+        ? Math.max(0, overflowInput.contextWindow - Math.min(overflowInput.maxOutputTokens, 20_000) - 20_000)
+        : 0
+      yield { type: 'context_pressure', level, usable: usableTokens, current: promptTokens }
+
+      // Trigger progressive compaction based on pressure level
+      if (level >= 3) {
+        // Severe: microcompact everything except last 2 messages
+        const compacted = microcompact(messages, 2)
+        messages.length = 0
+        messages.push(...compacted)
+      } else if (level >= 2) {
+        // Moderate: microcompact older half
+        const preserveCount = Math.max(4, Math.ceil(messages.length / 2))
+        const compacted = microcompact(messages, preserveCount)
+        messages.length = 0
+        messages.push(...compacted)
+      } else if (level >= 1) {
+        // Light: microcompact only the oldest messages, keep last 4 intact
+        const compacted = microcompact(messages, 4)
+        messages.length = 0
+        messages.push(...compacted)
+      }
     }
 
     const { content, toolCalls } = collector.getResult();

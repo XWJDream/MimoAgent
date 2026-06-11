@@ -10,7 +10,7 @@ import { readdir } from 'fs/promises';
 import { basename, isAbsolute, join, relative, resolve } from 'path';
 import { pathToFileURL } from 'url';
 import { IPC } from '../shared/ipc-channels.js';
-import type { AppConfig, AutomationExecution, AutomationRule, CollaborationTask, FileTreeNode, McpServerConfig, PublicAppConfig, Session, ToolInfo, WorkspaceInfo } from '../shared/types.js';
+import type { AppConfig, AutomationExecution, AutomationRule, ChatAttachment, CollaborationTask, FileTreeNode, McpServerConfig, PublicAppConfig, Session, ToolInfo, WorkspaceInfo } from '../shared/types.js';
 import { AgentService } from './agent-service.js';
 import { runRules } from './supervisor-rules.js';
 import type { Violation } from './supervisor-rules.js';
@@ -48,6 +48,21 @@ const MCP_SERVERS_FILE = join(app.getPath('userData'), 'mcp-servers.json');
 const AUTOMATION_RULES_FILE = join(app.getPath('userData'), 'automation-rules.json');
 const AUTOMATION_EXECUTIONS_FILE = join(app.getPath('userData'), 'automation-executions.json');
 const CONFIG_FILE = join(app.getPath('userData'), 'config.json');
+const CONFIG_SCHEMA_VERSION = 1;
+
+interface StoredConfig extends Partial<AppConfig> {
+  configSchemaVersion?: number;
+}
+
+export function migrateStoredConfig(data: StoredConfig): { config: StoredConfig; migrated: boolean } {
+  if ((data.configSchemaVersion ?? 0) >= CONFIG_SCHEMA_VERSION) {
+    return { config: data, migrated: false };
+  }
+  return {
+    config: { ...data, theme: 'sakura', configSchemaVersion: CONFIG_SCHEMA_VERSION },
+    migrated: true,
+  };
+}
 
 /** Generate a unique ID with timestamp + random suffix to avoid collisions */
 function generateId(): string {
@@ -109,7 +124,7 @@ function validateConfigValue(key: keyof AppConfig, value: unknown): AppConfig[ke
       if (typeof value !== 'number' || value < 0 || value > 2) throw new Error('temperature must be between 0 and 2');
       return value;
     case 'theme':
-      if (value !== 'dark' && value !== 'light') throw new Error('theme is invalid');
+      if (value !== 'dark' && value !== 'light' && value !== 'sakura') throw new Error('theme is invalid');
       return value;
     case 'sandboxEnabled':
       if (typeof value !== 'boolean') throw new Error('sandboxEnabled must be a boolean');
@@ -125,8 +140,13 @@ function validateConfigValue(key: keyof AppConfig, value: unknown): AppConfig[ke
 function loadConfig(): Partial<AppConfig> {
   try {
     if (existsSync(CONFIG_FILE)) {
-      const data = readFileSync(CONFIG_FILE, 'utf-8');
-      return JSON.parse(data);
+      const loaded = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8')) as StoredConfig;
+      const { config: data, migrated } = migrateStoredConfig(loaded);
+      if (migrated) {
+        writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2), 'utf-8');
+      }
+      const { configSchemaVersion: _configSchemaVersion, ...config } = data;
+      return config;
     }
   } catch (err) {
     console.error('[Config] Failed to load config:', err);
@@ -136,7 +156,8 @@ function loadConfig(): Partial<AppConfig> {
 
 function saveConfig(config: AppConfig): void {
   try {
-    writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+    const storedConfig: StoredConfig = { ...config, configSchemaVersion: CONFIG_SCHEMA_VERSION };
+    writeFileSync(CONFIG_FILE, JSON.stringify(storedConfig, null, 2), 'utf-8');
   } catch (err) {
     console.error('[Config] Failed to save config:', err);
   }
@@ -394,7 +415,7 @@ const defaultConfig: AppConfig = {
   maxTurns: 50,
   temperature: 0.2,
   reasoningEffort: 'medium',
-  theme: 'dark',
+  theme: 'sakura',
   selectedAvatarId: 'default',
   sandboxEnabled: false,
 };
@@ -511,6 +532,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     IPC.SESSION_RENAME,
     IPC.SESSION_SET_WORKSPACE,
     IPC.FILE_DIALOG,
+    IPC.FILE_ATTACHMENTS_PICK,
     IPC.FILE_LIST,
     IPC.FILE_READ,
     IPC.FILE_WRITE,
@@ -519,6 +541,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     IPC.AGENT_CLEAR,
     IPC.MEMORY_GET,
     IPC.MEMORY_SET,
+    IPC.MEMORY_SEARCH,
+    IPC.MEMORY_RECONCILE,
     IPC.COMPACT,
     IPC.SESSIONS_SAVE,
     IPC.SESSIONS_LOAD,
@@ -671,6 +695,30 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] });
     return result.canceled ? null : result.filePaths[0];
   });
+  ipcMain.handle(IPC.FILE_ATTACHMENTS_PICK, async (): Promise<ChatAttachment[]> => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Images and text files', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'txt', 'md', 'ts', 'tsx', 'js', 'jsx', 'json', 'css', 'html', 'py', 'rs', 'go', 'yaml', 'yml', 'toml', 'sh', 'sql'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    if (result.canceled) return [];
+    const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
+    const textExtensions = new Set(['.txt', '.md', '.ts', '.tsx', '.js', '.jsx', '.json', '.css', '.html', '.py', '.rs', '.go', '.yaml', '.yml', '.toml', '.sh', '.sql']);
+    return result.filePaths.slice(0, 10).map((filePath) => {
+      const extension = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
+      const size = statSync(filePath).size;
+      const kind: ChatAttachment['kind'] = imageExtensions.has(extension) ? 'image' : textExtensions.has(extension) ? 'text' : 'file';
+      return {
+        name: basename(filePath),
+        path: filePath,
+        size,
+        kind,
+        ...(kind === 'text' && size <= 1024 * 1024 ? { content: readFileSync(filePath, 'utf-8') } : {}),
+      };
+    });
+  });
   ipcMain.handle(IPC.FILE_LIST, async (_, path?: string) => listFiles(path));
   ipcMain.handle(IPC.FILE_READ, (_, path: string) => readWorkspaceFile(path));
   ipcMain.handle(IPC.FILE_WRITE, (_, path: string, content: string) => {
@@ -731,6 +779,29 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       memory?.setContent?.(content);
       await memory?.save?.();
       return { success: true };
+    } catch (e) { return { success: false, error: String(e) }; }
+  });
+
+  ipcMain.handle(IPC.MEMORY_SEARCH, async (_event, query: string, options?: { scope?: string; limit?: number }) => {
+    try {
+      const agent = agentService.getAgent?.();
+      const memoryService = agent?.getMemoryService?.();
+      if (!memoryService) return { results: [], error: 'Memory service not initialized' };
+      const results = memoryService.search(query, {
+        limit: options?.limit ?? 10,
+        scope: options?.scope as 'global' | 'project' | 'session' | undefined,
+      });
+      return { results };
+    } catch (e) { return { results: [], error: String(e) }; }
+  });
+
+  ipcMain.handle(IPC.MEMORY_RECONCILE, async () => {
+    try {
+      const agent = agentService.getAgent?.();
+      const memoryService = agent?.getMemoryService?.();
+      if (!memoryService) return { success: false, error: 'Memory service not initialized' };
+      const result = memoryService.reconcile();
+      return { success: true, ...result };
     } catch (e) { return { success: false, error: String(e) }; }
   });
 

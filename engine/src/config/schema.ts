@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 const PermissionModeSchema = z.enum(['suggest', 'auto-edit', 'full-auto']);
 
+const AgentModeSchema = z.enum(['build', 'plan', 'explore']);
+
 const SandboxConfigSchema = z.object({
   enabled: z.boolean().default(false),
   image: z.string().default('mimo-agent-sandbox:latest'),
@@ -24,6 +26,7 @@ export const ConfigSchema = z.object({
   temperature: z.number().min(0).max(2).default(0.2),
   contextWindow: z.number().default(128000),
   permissionMode: PermissionModeSchema.default('suggest'),
+  agentMode: AgentModeSchema.default('build'),
   allowedTools: z.array(z.string()).default([]),
   blockedTools: z.array(z.string()).default([]),
   allowedPaths: z.array(z.string()).default(['.']),

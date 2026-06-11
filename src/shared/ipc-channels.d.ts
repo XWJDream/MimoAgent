@@ -25,6 +25,7 @@ export declare const IPC: {
     readonly FILE_READ: "file:read";
     readonly FILE_WRITE: "file:write";
     readonly FILE_DIALOG: "file:dialog";
+    readonly FILE_ATTACHMENTS_PICK: "file:attachments-pick";
     readonly SHELL_EXEC: "shell:exec";
     readonly WINDOW_MINIMIZE: "window:minimize";
     readonly WINDOW_MAXIMIZE: "window:maximize";

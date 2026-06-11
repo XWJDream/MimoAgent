@@ -83,7 +83,8 @@ vi.mock('./tts-store.js', () => ({
   },
 }));
 
-const { registerIpcHandlers } = await import('./ipc.js');
+const { migrateStoredConfig, registerIpcHandlers } = await import('./ipc.js');
+const { dialog: mockedDialog } = await import('electron');
 
 const mockWindow = {
   webContents: { send: vi.fn() },
@@ -98,6 +99,14 @@ const mockWindow = {
 registerIpcHandlers(mockWindow as unknown as import('electron').BrowserWindow);
 
 describe('ipc', () => {
+  describe('config migration', () => {
+    it('preserves a user theme after the sakura migration has run', () => {
+      const result = migrateStoredConfig({ configSchemaVersion: 1, theme: 'dark' });
+      expect(result.migrated).toBe(false);
+      expect(result.config.theme).toBe('dark');
+    });
+  });
+
   describe('CONFIG_GET - maskApiKey', () => {
     it('should mask API key showing only first 4 and last 4 characters', () => {
       const handler = handlers.get('config:get')!;
@@ -116,6 +125,18 @@ describe('ipc', () => {
       const handler = handlers.get('config:get')!;
       const result = handler();
       expect(result.apiKey).toBeUndefined();
+    });
+
+    it('should migrate an unversioned config to sakura without exposing the schema version', () => {
+      const handler = handlers.get('config:get')!;
+      const result = handler();
+      expect(result.theme).toBe('sakura');
+      expect(result.configSchemaVersion).toBeUndefined();
+      expect(mockWriteFileSync).toHaveBeenCalledWith(
+        expect.stringContaining('config.json'),
+        expect.stringContaining('"configSchemaVersion": 1'),
+        'utf-8',
+      );
     });
   });
 
@@ -161,6 +182,12 @@ describe('ipc', () => {
       expect(() => handler({}, 'toolPreset', 'act')).not.toThrow();
     });
 
+    it('should accept sakura as a theme', () => {
+      const handler = handlers.get('config:set')!;
+      expect(() => handler({}, 'theme', 'sakura')).not.toThrow();
+      expect(() => handler({}, 'theme', 'invalid')).toThrow();
+    });
+
     it('should validate sandboxEnabled as boolean', () => {
       const handler = handlers.get('config:set')!;
       expect(() => handler({}, 'sandboxEnabled', 'yes')).toThrow();
@@ -192,6 +219,24 @@ describe('ipc', () => {
       const s1 = handler({}, 'Session 1');
       const s2 = handler({}, 'Session 2');
       expect(s1.id).not.toBe(s2.id);
+    });
+  });
+
+  describe('FILE_ATTACHMENTS_PICK', () => {
+    it('returns selected text files with readable content', async () => {
+      vi.mocked(mockedDialog.showOpenDialog).mockResolvedValueOnce({
+        canceled: false,
+        filePaths: ['C:\\notes.md'],
+      });
+      const handler = handlers.get('file:attachments-pick')!;
+      const result = await handler({});
+
+      expect(result).toEqual([expect.objectContaining({
+        name: 'notes.md',
+        path: 'C:\\notes.md',
+        kind: 'text',
+        content: '{}',
+      })]);
     });
   });
 

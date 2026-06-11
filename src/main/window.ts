@@ -13,7 +13,7 @@ export function createMainWindow(): BrowserWindow {
     minHeight: 600,
     frame: false,
     titleBarStyle: 'hidden',
-    backgroundColor: '#0d1117',
+    backgroundColor: '#fff7fa',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { InputArea } from './InputArea';
 import { useChatStore } from '../../stores/chatStore';
 import { useConfigStore } from '../../stores/configStore';
@@ -62,6 +62,9 @@ beforeEach(() => {
       onToolStart: vi.fn().mockReturnValue(() => {}),
       onToolResult: vi.fn().mockReturnValue(() => {}),
       onThinking: vi.fn().mockReturnValue(() => {}),
+    },
+    files: {
+      pickAttachments: vi.fn().mockResolvedValue([]),
     },
   };
 });
@@ -163,5 +166,44 @@ describe('InputArea', () => {
     fireEvent.click(stopButton);
 
     expect(window.api!.agent!.stop).toHaveBeenCalled();
+  });
+
+  it('switches the real tool preset from the plus menu', async () => {
+    render(<InputArea />);
+
+    fireEvent.click(screen.getByRole('button', { name: '更多功能' }));
+    fireEvent.click(screen.getByRole('button', { name: /计划模式/ }));
+
+    await waitFor(() => expect(useConfigStore.getState().config.toolPreset).toBe('plan'));
+    expect(screen.getByText('计划模式', { selector: '.composer-mode-indicators span' })).toBeInTheDocument();
+  });
+
+  it('adds goal tracking instructions to the agent prompt', () => {
+    render(<InputArea />);
+
+    fireEvent.click(screen.getByRole('button', { name: '更多功能' }));
+    fireEvent.click(screen.getByRole('button', { name: /追求目标/ }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'finish this task' } });
+    fireEvent.click(screen.getByRole('button', { name: /发送/i }));
+
+    expect(window.api.agent.run).toHaveBeenCalledWith(expect.stringContaining('Goal tracking is enabled'));
+  });
+
+  it('picks and sends text attachments with their content', async () => {
+    vi.mocked(window.api.files.pickAttachments).mockResolvedValueOnce([{
+      name: 'notes.md',
+      path: 'C:\\notes.md',
+      size: 12,
+      kind: 'text',
+      content: '# Notes',
+    }]);
+    render(<InputArea />);
+
+    fireEvent.click(screen.getByRole('button', { name: '更多功能' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加照片和文件' }));
+    await screen.findByText('notes.md');
+    fireEvent.click(screen.getByRole('button', { name: /发送/i }));
+
+    expect(window.api.agent.run).toHaveBeenCalledWith(expect.stringContaining('# Notes'));
   });
 });

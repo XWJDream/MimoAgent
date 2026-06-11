@@ -14,6 +14,7 @@ import { SupervisorPanel } from '../supervisor/SupervisorPanel';
 import { CommandPalette } from '../common/CommandPalette';
 import { ToastContainer } from '../common/Toast';
 import { useChatStore } from '../../stores/chatStore';
+import { SakuraDecorations } from '../theme/SakuraDecorations';
 
 type ViewMode = 'chat' | 'workspace' | 'plugins' | 'automation' | 'tts' | 'skills' | 'console' | 'supervisor';
 
@@ -111,8 +112,20 @@ export function AppShell() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [paletteOpen, settingsOpen, currentView, handleNewChat, handleClearChat]);
 
+  useEffect(() => {
+    const handleOpenView = (event: Event) => {
+      const view = (event as CustomEvent<ViewMode>).detail;
+      if (!view || !(view in mountedRef.current)) return;
+      mountedRef.current[view] = true;
+      setCurrentView(view);
+    };
+    window.addEventListener('mimo:open-view', handleOpenView);
+    return () => window.removeEventListener('mimo:open-view', handleOpenView);
+  }, []);
+
   return (
     <div className="app-frame overflow-hidden">
+      <SakuraDecorations />
       <Header onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} onOpenSettings={() => setSettingsOpen(true)} />
 
       <div className="flex min-h-0 flex-1 overflow-hidden">

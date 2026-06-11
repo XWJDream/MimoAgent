@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Wrench, Activity, Layers, Zap, Database, Users } from 'lucide-react';
 import { ToolCard } from './ToolCard';
 import { useChatStore } from '../../stores/chatStore';
@@ -8,6 +8,14 @@ import { useT } from '../../i18n';
 interface ToolPanelProps {
   forceOpen?: boolean;
 }
+
+// Pressure level labels and colors
+const PRESSURE_CONFIG: Record<number, { label: string; color: string; bg: string }> = {
+  0: { label: '无压力', color: 'var(--success)', bg: 'rgba(34,197,94,0.12)' },
+  1: { label: '轻度', color: '#eab308', bg: 'rgba(234,179,8,0.12)' },
+  2: { label: '中度', color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
+  3: { label: '严重', color: 'var(--error)', bg: 'rgba(239,68,68,0.12)' },
+};
 
 // Model context window sizes
 const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
@@ -41,6 +49,21 @@ export function ToolPanel({ forceOpen }: ToolPanelProps) {
   const { toolCalls, usage, messages, isThinking, isStreaming } = useChatStore();
   const { config, apiStatus } = useConfigStore();
   const runningTools = toolCalls.filter((tc) => tc.status === 'running').length;
+
+  // Context pressure state (updated via IPC from engine)
+  const [pressureLevel, setPressureLevel] = useState<0 | 1 | 2 | 3>(0);
+  const [pressureUsable, setPressureUsable] = useState(0);
+  const [pressureCurrent, setPressureCurrent] = useState(0);
+
+  useEffect(() => {
+    const api = (window as unknown as { api?: { agent?: { onContextPressure?: (cb: (data: { level: 0 | 1 | 2 | 3; usable: number; current: number }) => void) => () => void } } }).api;
+    const unsub = api?.agent?.onContextPressure?.((data) => {
+      setPressureLevel(data.level);
+      setPressureUsable(data.usable);
+      setPressureCurrent(data.current);
+    });
+    return () => { unsub?.(); };
+  }, []);
 
   const hasRunningTool = toolCalls.some((tc) => tc.status === 'running');
   const agentStatus = !config.apiKeyConfigured
@@ -161,6 +184,19 @@ export function ToolPanel({ forceOpen }: ToolPanelProps) {
         <div className="inspector-card-title">
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Zap size={12} strokeWidth={1.7} /> {t('inspector.contextWindow')}
+            {pressureLevel > 0 && (
+              <span style={{
+                marginLeft: 'auto',
+                fontSize: 10,
+                fontWeight: 600,
+                color: PRESSURE_CONFIG[pressureLevel].color,
+                background: PRESSURE_CONFIG[pressureLevel].bg,
+                padding: '1px 6px',
+                borderRadius: 4,
+              }}>
+                {PRESSURE_CONFIG[pressureLevel].label}
+              </span>
+            )}
           </span>
         </div>
         <div style={{ padding: '0 0 8px' }}>
@@ -176,10 +212,42 @@ export function ToolPanel({ forceOpen }: ToolPanelProps) {
               transition: 'width 300ms ease, background 300ms ease',
               background: contextColor,
             }} />
+            {/* Pressure zone marker */}
+            {pressureLevel > 0 && pressureUsable > 0 && (
+              <div style={{
+                position: 'absolute',
+                left: `${Math.min((pressureCurrent / contextWindow) * 100, 100)}%`,
+                top: -2,
+                width: 2,
+                height: 10,
+                background: PRESSURE_CONFIG[pressureLevel].color,
+                borderRadius: 1,
+                transition: 'left 300ms ease',
+              }} />
+            )}
           </div>
-          {contextPercent > 75 && (
+          {/* Pressure indicator bar */}
+          {pressureLevel > 0 && (
+            <div style={{ display: 'flex', gap: 2, marginTop: 4 }}>
+              {[1, 2, 3].map((lvl) => (
+                <div key={lvl} style={{
+                  flex: 1,
+                  height: 3,
+                  borderRadius: 2,
+                  background: pressureLevel >= lvl ? PRESSURE_CONFIG[lvl].color : 'var(--bg-hover)',
+                  transition: 'background 300ms ease',
+                }} />
+              ))}
+            </div>
+          )}
+          {pressureLevel >= 2 && (
+            <div style={{ fontSize: 10, color: PRESSURE_CONFIG[pressureLevel].color, marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+              {pressureLevel >= 3 ? '!!' : '!'} 上下文压力{PRESSURE_CONFIG[pressureLevel].label}，自动压缩已触发
+            </div>
+          )}
+          {contextPercent > 75 && pressureLevel < 2 && (
             <div style={{ fontSize: 10, color: 'var(--warning)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-              ⚠ {t('inspector.contextWarning') || '上下文即将用满，建议压缩'}
+              {t('inspector.contextWarning') || '上下文即将用满，建议压缩'}
             </div>
           )}
         </div>

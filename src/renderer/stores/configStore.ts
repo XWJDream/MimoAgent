@@ -25,7 +25,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     toolPreset: 'act',
     maxTurns: 50,
     temperature: 0.2,
-    theme: 'dark',
+    theme: 'sakura',
     selectedAvatarId: 'default',
     sandboxEnabled: false,
     reasoningEffort: 'medium',

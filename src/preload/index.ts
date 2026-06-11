@@ -13,6 +13,7 @@ const IPC = {
   AGENT_DONE: 'agent:done',
   AGENT_ERROR: 'agent:error',
   AGENT_THINKING: 'agent:thinking',
+  AGENT_CONTEXT_PRESSURE: 'agent:context-pressure',
   CONFIG_GET: 'config:get',
   CONFIG_SET: 'config:set',
   WORKSPACE_GET: 'workspace:get',
@@ -32,12 +33,15 @@ const IPC = {
   FILE_READ: 'file:read',
   FILE_WRITE: 'file:write',
   FILE_DIALOG: 'file:dialog',
+  FILE_ATTACHMENTS_PICK: 'file:attachments-pick',
   SHELL_EXEC: 'shell:exec',
   WINDOW_MINIMIZE: 'window:minimize',
   WINDOW_MAXIMIZE: 'window:maximize',
   WINDOW_CLOSE: 'window:close',
   MEMORY_GET: 'memory:get',
   MEMORY_SET: 'memory:set',
+  MEMORY_SEARCH: 'memory:search',
+  MEMORY_RECONCILE: 'memory:reconcile',
   COMPACT: 'conversation:compact',
   PERMISSION_REQUEST: 'permission:request',
   PERMISSION_RESPONSE: 'permission:response',
@@ -105,6 +109,11 @@ const api = {
       ipcRenderer.on(IPC.AGENT_THINKING, handler);
       return () => ipcRenderer.removeListener(IPC.AGENT_THINKING, handler);
     },
+    onContextPressure: (cb: (data: { level: 0 | 1 | 2 | 3; usable: number; current: number }) => void) => {
+      const handler = (_: unknown, data: { level: 0 | 1 | 2 | 3; usable: number; current: number }) => cb(data);
+      ipcRenderer.on(IPC.AGENT_CONTEXT_PRESSURE, handler);
+      return () => ipcRenderer.removeListener(IPC.AGENT_CONTEXT_PRESSURE, handler);
+    },
   },
 
   // Config
@@ -135,6 +144,7 @@ const api = {
     list: (path?: string) => ipcRenderer.invoke(IPC.FILE_LIST, path),
     read: (path: string) => ipcRenderer.invoke(IPC.FILE_READ, path),
     write: (path: string, content: string) => ipcRenderer.invoke(IPC.FILE_WRITE, path, content),
+    pickAttachments: () => ipcRenderer.invoke(IPC.FILE_ATTACHMENTS_PICK),
   },
 
   // Window
@@ -148,6 +158,8 @@ const api = {
   memory: {
     get: () => ipcRenderer.invoke(IPC.MEMORY_GET),
     set: (content: string) => ipcRenderer.invoke(IPC.MEMORY_SET, content),
+    search: (query: string, options?: { scope?: string; limit?: number }) => ipcRenderer.invoke(IPC.MEMORY_SEARCH, query, options),
+    reconcile: () => ipcRenderer.invoke(IPC.MEMORY_RECONCILE),
   },
 
   // Conversation

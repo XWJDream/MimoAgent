@@ -30,7 +30,7 @@ export default function App() {
   }, [loadConfig, validateApi, loadSessions, loadMessages]);
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme || 'dark');
+    document.documentElement.setAttribute('data-theme', theme || 'sakura');
   }, [theme]);
 
   return (

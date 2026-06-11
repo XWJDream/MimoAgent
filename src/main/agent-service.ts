@@ -34,6 +34,12 @@ interface AgentInstance {
   getConversation(): unknown[];
   setConversation(messages: unknown[]): void;
   getMemory(): ProjectMemory;
+  getMemoryService(): MemoryServiceInstance | null;
+}
+
+interface MemoryServiceInstance {
+  search(query: string, options?: { limit?: number; scope?: string }): unknown[];
+  reconcile(): { added: number; updated: number; removed: number };
 }
 
 interface ProjectMemory {
@@ -52,11 +58,14 @@ interface AgentRunOptions {
 }
 
 interface AgentEvent {
-  type: 'text' | 'tool_start' | 'tool_result' | 'done' | 'error';
+  type: 'text' | 'tool_start' | 'tool_result' | 'done' | 'error' | 'context_pressure';
   content?: string;
   message?: string;
   name?: string;
   result?: { output: string; isError: boolean };
+  level?: 0 | 1 | 2 | 3;
+  usable?: number;
+  current?: number;
 }
 
 interface UsageTracker {
@@ -86,7 +95,7 @@ interface ToolInfo {
 }
 
 /** Agent class constructor type */
-type AgentClassType = new (config: unknown, workspace?: string) => AgentInstance;
+type AgentClassType = new (config: unknown, workspace?: string, userDataPath?: string) => AgentInstance;
 
 // Dynamic import for mimo-agent (compiled JS)
 let AgentClass: AgentClassType | null = null;
@@ -187,12 +196,13 @@ export class AgentService {
     this.currentWorkspace = ws;
 
     const agentConfig = buildAgentConfig(config);
+    const userDataPath = app.getPath('userData');
 
     if (!AgentClass) {
       throw new Error('Agent class not loaded');
     }
 
-    this.agent = new AgentClass(agentConfig, ws);
+    this.agent = new AgentClass(agentConfig, ws, userDataPath);
     console.debug('[AgentService] Agent created, initializing...');
     await this.agent.initialize();
 
@@ -334,6 +344,12 @@ export class AgentService {
             cachedTokens: stats.sessionCachedTokens ?? 0,
             promptTokens: lastRecord?.promptTokens ?? 0,
             completionTokens: stats.completionTokens ?? 0,
+          });
+        } else if (event.type === 'context_pressure') {
+          window.webContents.send(IPC.AGENT_CONTEXT_PRESSURE, {
+            level: event.level,
+            usable: event.usable,
+            current: event.current,
           });
         } else if (event.type === 'error') {
           if (this.abortController.signal.aborted) {

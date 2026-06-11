@@ -95,6 +95,7 @@ export default {
   'settings.disabled': '已关闭',
   'settings.dark': '深色',
   'settings.light': '浅色',
+  'settings.sakura': '樱花',
   'settings.enterApiKey': '输入 API Key',
   'settings.keepCurrentKey': '留空则保持当前密钥不变',
   'settings.toolPreset.planDesc': '仅可读取和搜索，适合代码分析',

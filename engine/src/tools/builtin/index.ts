@@ -12,6 +12,7 @@ import { GitCommitTool } from './git-commit.js';
 import { WebFetchTool } from './web-fetch.js';
 import { GitCheckpointTool } from './git-checkpoint.js';
 import { SubAgentsRunTool } from './sub-agents-run.js';
+import { MemorySearchTool } from './memory-search.js';
 import { InMemoryTaskStore } from './task.js';
 import type { MimoConfig, SubAgentConfig } from '../../config/types.js';
 import type { PermissionChecker } from '../../permissions/checker.js';
@@ -20,6 +21,7 @@ interface RegisterBuiltinToolsOptions {
   mimoConfig?: MimoConfig;
   subAgents?: SubAgentConfig;
   getPermissionChecker?: () => PermissionChecker | null;
+  memorySearchTool?: MemorySearchTool;
 }
 
 export function registerBuiltinTools(
@@ -52,6 +54,11 @@ export function registerBuiltinTools(
     }));
   }
 
+  // Memory search tool (available in both plan and act presets)
+  if (options.memorySearchTool) {
+    allTools.push(options.memorySearchTool);
+  }
+
   if (preset === 'plan') {
     // Read-only tools only (web_fetch is read-only, included in plan)
     const planTools = allTools.filter(t =>
@@ -75,3 +82,4 @@ export { GitCommitTool } from './git-commit.js';
 export { WebFetchTool } from './web-fetch.js';
 export { GitCheckpointTool } from './git-checkpoint.js';
 export { SubAgentsRunTool } from './sub-agents-run.js';
+export { MemorySearchTool } from './memory-search.js';

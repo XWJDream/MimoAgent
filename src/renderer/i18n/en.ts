@@ -94,6 +94,7 @@ export default {
   'settings.disabled': 'Disabled',
   'settings.dark': 'Dark',
   'settings.light': 'Light',
+  'settings.sakura': 'Sakura',
   'settings.enterApiKey': 'Enter API Key',
   'settings.keepCurrentKey': 'Leave empty to keep current key',
   'settings.toolPreset.planDesc': 'Read-only access for code analysis',

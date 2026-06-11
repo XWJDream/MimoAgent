@@ -25,7 +25,7 @@ const ERROR_PATTERNS: Array<{ pattern: RegExp; message: string }> = [
   { pattern: /toolPreset must be plan or act/, message: '工具模式无效，请选择分析模式或操作模式' },
   { pattern: /maxTurns must be an integer/, message: '最大轮次需要是 1 到 200 之间的整数' },
   { pattern: /temperature must be between/, message: '温度值需要在 0 到 2 之间' },
-  { pattern: /theme is invalid/, message: '主题设置无效，请选择深色或浅色' },
+  { pattern: /theme is invalid/, message: '主题设置无效，请选择深色、浅色或樱花主题' },
   { pattern: /sandboxEnabled must be a boolean/, message: '沙盒模式开关值无效' },
   { pattern: /reasoningEffort must be/, message: '思考强度需要选择低、中或高' },
   { pattern: /Unknown config key/, message: '不支持的设置项' },
