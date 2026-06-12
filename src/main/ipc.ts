@@ -1661,6 +1661,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         switch (updates.status) {
           case 'in_progress': task = registry.start(sid, taskId); break;
           case 'blocked': task = registry.block(sid, taskId); break;
+          case 'unblock': task = registry.unblock(sid, taskId); break;
           case 'done': task = registry.done(sid, taskId); break;
           case 'abandoned': task = registry.abandon(sid, taskId); break;
           default: task = registry.update(sid, taskId, updates);

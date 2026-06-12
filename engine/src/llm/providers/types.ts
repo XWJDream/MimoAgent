@@ -3,6 +3,9 @@
  * 支持多种 LLM Provider 的统一接口
  */
 
+import type { ChatMessage, ChatResponse, StreamEvent } from '../types.js';
+import type { ChatCompletionTool } from 'openai/resources/chat/completions';
+
 /** 模型信息 */
 export interface ModelInfo {
   id: string;
@@ -28,8 +31,8 @@ export interface ProviderConfig {
 
 /** LLM 客户端接口 */
 export interface ILLMClient {
-  chat(messages: any[], tools?: any[], signal?: AbortSignal): Promise<any>;
-  chatStream(messages: any[], tools?: any[], signal?: AbortSignal): AsyncGenerator<any>;
+  chat(messages: ChatMessage[], tools?: ChatCompletionTool[], signal?: AbortSignal): Promise<ChatResponse>;
+  chatStream(messages: ChatMessage[], tools?: ChatCompletionTool[], signal?: AbortSignal): AsyncGenerator<StreamEvent>;
 }
 
 /** LLM Provider 接口 */

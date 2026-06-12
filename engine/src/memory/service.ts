@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, unlinkSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type Database from 'better-sqlite3';
 import { getDatabase, closeDatabase, type MemoryScope, type MemoryType } from './database.js';
@@ -151,7 +151,7 @@ export class MemoryService {
     writeFileSync(filePath, body, 'utf-8');
 
     // 写入数据库
-    const stat = require('node:fs').statSync(filePath);
+    const stat = statSync(filePath);
     const fingerprint = `${stat.size}-${stat.mtimeMs}`;
 
     this.db.prepare(`

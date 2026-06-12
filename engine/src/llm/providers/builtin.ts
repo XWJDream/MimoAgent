@@ -32,9 +32,11 @@ async function validateApiKey(apiKey: string, baseUrl: string): Promise<boolean>
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(5000),
     });
-    return response.ok || response.status === 401 ? response.ok : true;
+    // 200-299 = 有效, 401 = key 无效, 其他状态码 = 不确定（保守返回 false）
+    return response.ok;
   } catch {
-    return !!apiKey;
+    // 网络错误时无法验证，返回 true（不阻塞用户）
+    return true;
   }
 }
 
