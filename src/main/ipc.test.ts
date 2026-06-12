@@ -301,4 +301,46 @@ describe('ipc', () => {
       expect(result.success).toBe(true);
     });
   });
+
+  describe('MESSAGES_SAVE - path sanitization via JSON fallback', () => {
+    it('should sanitize path traversal in session ID when SQLite fails', async () => {
+      // Force JSON fallback by making saveMessages throw
+      const messageRepoModule = await import('./storage/message-repo.js');
+      const origImpl = vi.mocked(messageRepoModule.saveMessages).getMockImplementation();
+      vi.mocked(messageRepoModule.saveMessages).mockImplementationOnce(() => { throw new Error('SQLite unavailable'); });
+
+      const handler = handlers.get('messages:save')!;
+      mockWriteFileSync.mockClear();
+      await handler({}, '..\\..\\secret', []);
+
+      const writeCall = mockWriteFileSync.mock.calls.find((c: unknown[]) =>
+        typeof c[0] === 'string' && (c[0] as string).endsWith('.json')
+      );
+      expect(writeCall).toBeDefined();
+      const filename = (writeCall![0] as string).split(/[/\\]/).pop()!;
+      expect(filename).not.toContain('..');
+      expect(filename).toBe('____secret.json');
+
+      // Restore original mock
+      if (origImpl) vi.mocked(messageRepoModule.saveMessages).mockImplementation(origImpl);
+    });
+
+    it('should preserve normal session ID in JSON fallback path', async () => {
+      const messageRepoModule = await import('./storage/message-repo.js');
+      const origImpl = vi.mocked(messageRepoModule.saveMessages).getMockImplementation();
+      vi.mocked(messageRepoModule.saveMessages).mockImplementationOnce(() => { throw new Error('SQLite unavailable'); });
+
+      const handler = handlers.get('messages:save')!;
+      mockWriteFileSync.mockClear();
+      await handler({}, 'normal-session-id', []);
+
+      const writeCall = mockWriteFileSync.mock.calls.find((c: unknown[]) =>
+        typeof c[0] === 'string' && (c[0] as string).endsWith('.json')
+      );
+      expect(writeCall).toBeDefined();
+      expect(writeCall![0]).toContain('normal-session-id');
+
+      if (origImpl) vi.mocked(messageRepoModule.saveMessages).mockImplementation(origImpl);
+    });
+  });
 });
