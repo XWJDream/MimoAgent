@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Wrench, Activity, Layers, Zap, Database, Users } from 'lucide-react';
+import { Wrench, Activity, Layers, Zap, Users } from 'lucide-react';
 import { ToolCard } from './ToolCard';
 import { useChatStore } from '../../stores/chatStore';
 import { useConfigStore } from '../../stores/configStore';
@@ -100,9 +100,6 @@ export function ToolPanel({ forceOpen }: ToolPanelProps) {
   const contextPercent = Math.min((estimatedContextTokens / contextWindow) * 100, 100);
   const contextColor = contextPercent > 75 ? 'var(--error)' : contextPercent > 50 ? 'var(--warning)' : 'var(--accent)';
 
-  // Cache stats
-  const cacheHit = usage.sessionCachedTokens;
-  const cacheMiss = usage.sessionPromptTokens - cacheHit;
 
   return (
     <aside
@@ -154,30 +151,6 @@ export function ToolPanel({ forceOpen }: ToolPanelProps) {
         </div>
       </div>
 
-      {/* Cache Stats - only show when API provides cache data */}
-      {usage.sessionPromptTokens > 0 && (
-        <div className="inspector-card">
-          <div className="inspector-card-title">
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Database size={12} strokeWidth={1.7} /> {t('inspector.cacheStats')}
-            </span>
-          </div>
-          <div className="inspector-stat">
-            <span className="inspector-stat-label">{t('inspector.cacheHit')}</span>
-            <span className="inspector-stat-value" style={{ color: cacheHit > 0 ? 'var(--success)' : 'var(--text-muted)' }}>{formatTokens(cacheHit)}</span>
-          </div>
-          <div className="inspector-stat">
-            <span className="inspector-stat-label">{t('inspector.cacheMiss')}</span>
-            <span className="inspector-stat-value" style={{ color: cacheMiss > 0 ? 'var(--text-secondary)' : 'var(--text-muted)' }}>{formatTokens(Math.max(0, cacheMiss))}</span>
-          </div>
-          <div className="inspector-stat">
-            <span className="inspector-stat-label">{t('inspector.hitRate')}</span>
-            <span className="inspector-stat-value" style={{ color: cacheHit > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
-              {((cacheHit / usage.sessionPromptTokens) * 100).toFixed(1)}%
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* Context Window */}
       <div className="inspector-card">
