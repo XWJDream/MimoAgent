@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow } from 'electron';
+import { randomUUID } from 'crypto';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
 import { IPC } from '../shared/ipc-channels.js';
@@ -15,8 +16,22 @@ interface PermissionRequest {
 /** Permission result */
 interface PermissionResult {
   allowed: boolean;
+  always?: boolean;
   reason?: string;
 }
+
+/** Pending permission request with Promise resolver */
+interface PendingPermission {
+  resolve: (result: PermissionResult) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
+/**
+ * Global pending permission map.
+ * Shared between AgentService and the IPC handler in ipc.ts
+ * so that PERMISSION_RESPONSE can resolve pending promises.
+ */
+export const pendingPermissions = new Map<string, PendingPermission>();
 
 /** Permission checker interface */
 interface PermissionChecker {
@@ -74,7 +89,7 @@ interface AgentRunOptions {
 }
 
 interface AgentEvent {
-  type: 'text' | 'tool_start' | 'tool_result' | 'done' | 'error' | 'context_pressure';
+  type: 'text' | 'tool_start' | 'tool_result' | 'done' | 'error' | 'context_pressure' | 'context_overflow';
   content?: string;
   message?: string;
   name?: string;
@@ -82,6 +97,7 @@ interface AgentEvent {
   level?: 0 | 1 | 2 | 3;
   usable?: number;
   current?: number;
+  action?: 'auto_compact' | 'manual_required';
 }
 
 interface UsageTracker {
@@ -226,25 +242,36 @@ export class AgentService {
     console.debug('[AgentService] Agent created, initializing...');
     await this.agent.initialize();
 
-    // Set up permission prompt to use Electron native dialog
+    // Set up permission prompt to use interactive frontend dialog
     const permissionChecker = this.agent.getPermissionChecker();
     if (permissionChecker && this.mainWindow) {
       permissionChecker.setPromptFn(async (request: PermissionRequest) => {
         const window = this.mainWindow;
-        if (!window) return { allowed: true };
+        if (!window || window.isDestroyed()) return { allowed: true };
 
-        const result = await dialog.showMessageBox(window, {
-          type: 'question',
-          buttons: ['允许', '拒绝'],
-          defaultId: 1,
-          title: '权限请求',
-          message: `是否允许执行操作？`,
-          detail: `工具: ${request.toolName}\n风险级别: ${request.riskLevel}\n\n${request.description}`,
-          cancelId: 1,
-          noLink: true,
+        const requestId = randomUUID();
+
+        // Determine risk level for the frontend
+        const riskLevel = (request.riskLevel as string) || 'read';
+
+        // Send permission request to renderer
+        window.webContents.send(IPC.PERMISSION_REQUEST, {
+          id: requestId,
+          toolName: request.toolName,
+          description: request.description,
+          args: request.args,
+          riskLevel,
         });
 
-        return { allowed: result.response === 0 };
+        // Wait for renderer response (with 5-minute timeout)
+        return new Promise<PermissionResult>((resolve) => {
+          const timeout = setTimeout(() => {
+            pendingPermissions.delete(requestId);
+            resolve({ allowed: false, reason: 'Permission request timed out' });
+          }, 5 * 60 * 1000);
+
+          pendingPermissions.set(requestId, { resolve, timeout });
+        });
       });
     }
 
@@ -372,6 +399,10 @@ export class AgentService {
             level: event.level,
             usable: event.usable,
             current: event.current,
+          });
+        } else if (event.type === 'context_overflow') {
+          window.webContents.send(IPC.AGENT_CONTEXT_OVERFLOW, {
+            action: event.action,
           });
         } else if (event.type === 'error') {
           if (this.abortController.signal.aborted) {

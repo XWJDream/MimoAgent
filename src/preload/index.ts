@@ -14,6 +14,7 @@ const IPC = {
   AGENT_ERROR: 'agent:error',
   AGENT_THINKING: 'agent:thinking',
   AGENT_CONTEXT_PRESSURE: 'agent:context-pressure',
+  AGENT_CONTEXT_OVERFLOW: 'agent:context-overflow',
   CONFIG_GET: 'config:get',
   CONFIG_SET: 'config:set',
   WORKSPACE_GET: 'workspace:get',
@@ -122,6 +123,11 @@ const api = {
       const handler = (_: unknown, data: { level: 0 | 1 | 2 | 3; usable: number; current: number }) => cb(data);
       ipcRenderer.on(IPC.AGENT_CONTEXT_PRESSURE, handler);
       return () => ipcRenderer.removeListener(IPC.AGENT_CONTEXT_PRESSURE, handler);
+    },
+    onContextOverflow: (cb: (data: { action: 'auto_compact' | 'manual_required' }) => void) => {
+      const handler = (_: unknown, data: { action: 'auto_compact' | 'manual_required' }) => cb(data);
+      ipcRenderer.on(IPC.AGENT_CONTEXT_OVERFLOW, handler);
+      return () => ipcRenderer.removeListener(IPC.AGENT_CONTEXT_OVERFLOW, handler);
     },
   },
 
@@ -290,13 +296,13 @@ const api = {
 
   // Permission
   permission: {
-    request: (params: { toolName: string; description: string; riskLevel: string }) =>
-      ipcRenderer.invoke(IPC.PERMISSION_REQUEST, params),
-    onResponse: (cb: (response: { requestId: string; allowed: boolean }) => void) => {
-      const handler = (_: unknown, response: { requestId: string; allowed: boolean }) => cb(response);
-      ipcRenderer.on(IPC.PERMISSION_RESPONSE, handler);
-      return () => ipcRenderer.removeListener(IPC.PERMISSION_RESPONSE, handler);
+    onRequest: (cb: (request: { id: string; toolName: string; description: string; args: Record<string, unknown>; riskLevel: string }) => void) => {
+      const handler = (_: unknown, request: { id: string; toolName: string; description: string; args: Record<string, unknown>; riskLevel: string }) => cb(request);
+      ipcRenderer.on(IPC.PERMISSION_REQUEST, handler);
+      return () => ipcRenderer.removeListener(IPC.PERMISSION_REQUEST, handler);
     },
+    respond: (requestId: string, response: { allowed: boolean; always?: boolean; feedback?: string }) =>
+      ipcRenderer.invoke('permission:respond', requestId, response),
   },
 };
 

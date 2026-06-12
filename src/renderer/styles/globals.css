@@ -947,6 +947,69 @@ button { color: inherit; }
   color: var(--accent);
 }
 
+/* ===== Slash Command Popover ===== */
+.slash-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  padding: 4px;
+  z-index: 50;
+  animation: fadeIn 100ms var(--ease-out);
+}
+
+.slash-popover-empty {
+  padding: 12px 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.slash-popover-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.slash-popover-item:hover,
+.slash-popover-item.selected {
+  background: var(--bg-hover);
+}
+
+.slash-popover-trigger {
+  font-family: 'Geist Mono', 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  min-width: 70px;
+}
+
+.slash-popover-title {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.slash-popover-keybind {
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  font-family: 'Geist Mono', 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+}
+
 @media (max-width: 900px) {
   .model-select { display: none; }
 }
@@ -1846,6 +1909,26 @@ button { color: inherit; }
 [data-theme="sakura"] .composer:focus-within {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(239,79,130,.08), 0 9px 25px rgba(212,101,139,.1);
+}
+
+[data-theme="sakura"] .slash-popover {
+  border-color: rgba(239,79,130,.32);
+  background: rgba(255,253,254,.95);
+  box-shadow: 0 8px 24px rgba(212,101,139,.12);
+}
+
+[data-theme="sakura"] .slash-popover-item:hover,
+[data-theme="sakura"] .slash-popover-item.selected {
+  background: rgba(239,79,130,.08);
+}
+
+[data-theme="sakura"] .slash-popover-trigger {
+  color: var(--accent);
+}
+
+[data-theme="sakura"] .slash-popover-keybind {
+  border-color: rgba(239,79,130,.24);
+  background: rgba(255,239,245,.7);
 }
 
 [data-theme="sakura"] .composer-tag:first-child {

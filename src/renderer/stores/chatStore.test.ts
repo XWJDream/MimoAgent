@@ -294,3 +294,130 @@ describe('chatStore - switchSession', () => {
     expect(useChatStore.getState().subagents).toEqual([]);
   });
 });
+
+describe('chatStore - inputHistory', () => {
+  beforeEach(() => {
+    useChatStore.setState({ inputHistory: [], historyIndex: -1 });
+    localStorage.clear();
+  });
+
+  it('addToHistory adds input to history', () => {
+    useChatStore.getState().addToHistory('hello world');
+
+    const { inputHistory, historyIndex } = useChatStore.getState();
+    expect(inputHistory).toEqual(['hello world']);
+    expect(historyIndex).toBe(-1);
+  });
+
+  it('addToHistory deduplicates entries', () => {
+    useChatStore.getState().addToHistory('hello');
+    useChatStore.getState().addToHistory('world');
+    useChatStore.getState().addToHistory('hello');
+
+    const { inputHistory } = useChatStore.getState();
+    expect(inputHistory).toEqual(['hello', 'world']);
+  });
+
+  it('addToHistory puts new entries first', () => {
+    useChatStore.getState().addToHistory('first');
+    useChatStore.getState().addToHistory('second');
+    useChatStore.getState().addToHistory('third');
+
+    const { inputHistory } = useChatStore.getState();
+    expect(inputHistory).toEqual(['third', 'second', 'first']);
+  });
+
+  it('addToHistory ignores empty input', () => {
+    useChatStore.getState().addToHistory('');
+    useChatStore.getState().addToHistory('   ');
+
+    expect(useChatStore.getState().inputHistory).toEqual([]);
+  });
+
+  it('addToHistory caps at 100 entries', () => {
+    for (let i = 0; i < 110; i++) {
+      useChatStore.getState().addToHistory(`item-${i}`);
+    }
+
+    expect(useChatStore.getState().inputHistory).toHaveLength(100);
+    expect(useChatStore.getState().inputHistory[0]).toBe('item-109');
+  });
+
+  it('navigateHistory up returns most recent entry', () => {
+    useChatStore.setState({ inputHistory: ['latest', 'older', 'oldest'], historyIndex: -1 });
+
+    const result = useChatStore.getState().navigateHistory('up');
+
+    expect(result).toBe('latest');
+    expect(useChatStore.getState().historyIndex).toBe(0);
+  });
+
+  it('navigateHistory up iterates through history', () => {
+    useChatStore.setState({ inputHistory: ['latest', 'older', 'oldest'], historyIndex: -1 });
+
+    useChatStore.getState().navigateHistory('up');
+    const result = useChatStore.getState().navigateHistory('up');
+
+    expect(result).toBe('older');
+    expect(useChatStore.getState().historyIndex).toBe(1);
+  });
+
+  it('navigateHistory up stops at end of history', () => {
+    useChatStore.setState({ inputHistory: ['a', 'b', 'c'], historyIndex: 2 });
+
+    const result = useChatStore.getState().navigateHistory('up');
+
+    // When already at the end (index 2), it stays at index 2 and returns 'c' (the last item)
+    expect(result).toBe('c');
+    expect(useChatStore.getState().historyIndex).toBe(2);
+  });
+
+  it('navigateHistory down returns previous entry', () => {
+    useChatStore.setState({ inputHistory: ['latest', 'older'], historyIndex: 1 });
+
+    const result = useChatStore.getState().navigateHistory('down');
+
+    expect(result).toBe('latest');
+    expect(useChatStore.getState().historyIndex).toBe(0);
+  });
+
+  it('navigateHistory down returns empty string at start', () => {
+    useChatStore.setState({ inputHistory: ['latest'], historyIndex: 0 });
+
+    const result = useChatStore.getState().navigateHistory('down');
+
+    expect(result).toBe('');
+    expect(useChatStore.getState().historyIndex).toBe(-1);
+  });
+
+  it('navigateHistory returns null when history is empty', () => {
+    useChatStore.setState({ inputHistory: [], historyIndex: -1 });
+
+    const result = useChatStore.getState().navigateHistory('up');
+
+    expect(result).toBeNull();
+  });
+
+  it('resetHistoryIndex resets to -1', () => {
+    useChatStore.setState({ historyIndex: 5 });
+
+    useChatStore.getState().resetHistoryIndex();
+
+    expect(useChatStore.getState().historyIndex).toBe(-1);
+  });
+
+  it('addToHistory resets historyIndex', () => {
+    useChatStore.setState({ inputHistory: ['a', 'b'], historyIndex: 1 });
+
+    useChatStore.getState().addToHistory('c');
+
+    expect(useChatStore.getState().historyIndex).toBe(-1);
+  });
+
+  it('addToHistory persists to localStorage', () => {
+    useChatStore.getState().addToHistory('persisted');
+
+    const stored = JSON.parse(localStorage.getItem('mimo:inputHistory') || '[]');
+    expect(stored).toEqual(['persisted']);
+  });
+});

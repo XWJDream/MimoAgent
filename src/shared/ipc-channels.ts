@@ -9,6 +9,7 @@ export const IPC = {
   AGENT_ERROR: 'agent:error',
   AGENT_THINKING: 'agent:thinking',
   AGENT_CONTEXT_PRESSURE: 'agent:context-pressure',
+  AGENT_CONTEXT_OVERFLOW: 'agent:context-overflow',
 
   CONFIG_GET: 'config:get',
   CONFIG_SET: 'config:set',

@@ -55,6 +55,19 @@ const ERROR_PATTERNS: Array<{ pattern: RegExp; message: string }> = [
   { pattern: /network.*error/i, message: '网络连接失败，请检查网络设置' },
   { pattern: /fetch.*failed/i, message: '网络请求失败，请检查网络连接' },
 
+  // Context overflow errors
+  { pattern: /maximum.*context.*length/i, message: '上下文窗口已满，请压缩上下文或清空聊天后重试' },
+  { pattern: /context.*window.*exceeded/i, message: '上下文窗口已满，请压缩上下文或清空聊天后重试' },
+  { pattern: /too many tokens/i, message: '上下文窗口已满，请压缩上下文或清空聊天后重试' },
+  { pattern: /prompt.*too.*long/i, message: '上下文窗口已满，请压缩上下文或清空聊天后重试' },
+  { pattern: /exceeds.*context.*limit/i, message: '上下文窗口已满，请压缩上下文或清空聊天后重试' },
+  { pattern: /context.*length.*exceeded/i, message: '上下文窗口已满，请压缩上下文或清空聊天后重试' },
+  { pattern: /context.*overflow/i, message: '上下文窗口已满，请压缩上下文或清空聊天后重试' },
+  { pattern: /token.*limit.*exceed/i, message: '上下文窗口已满，请压缩上下文或清空聊天后重试' },
+  { pattern: /input.*too.*long/i, message: '上下文窗口已满，请压缩上下文或清空聊天后重试' },
+  { pattern: /max.*context/i, message: '上下文窗口已满，请压缩上下文或清空聊天后重试' },
+  { pattern: /context.*full/i, message: '上下文窗口已满，请压缩上下文或清空聊天后重试' },
+
   // TTS errors
   { pattern: /请输入要转换的文本/, message: '请输入要转换的文本' },
   { pattern: /请先在设置中配置 API Key/, message: '请先在设置中配置 API Key' },
@@ -119,6 +132,7 @@ export function getErrorSeverity(error: string): 'info' | 'warning' | 'error' {
   if (error.includes('401') || error.includes('403') || error.includes('无效')) return 'error';
   if (error.includes('网络') || error.includes('连接')) return 'warning';
   if (error.includes('已停止') || error.includes('已取消')) return 'info';
+  if (error.includes('上下文窗口') || error.includes('上下文已满')) return 'warning';
   return 'error';
 }
 
@@ -131,6 +145,9 @@ export function getErrorAction(error: string): { label: string; action: string }
   }
   if (error.includes('网络') || error.includes('连接') || error.includes('超时')) {
     return { label: '重试', action: 'retry' };
+  }
+  if (error.includes('上下文窗口') || error.includes('上下文已满')) {
+    return { label: '压缩上下文', action: 'compact' };
   }
   return null;
 }

@@ -6,6 +6,8 @@ import {
 import { useChatStore } from '../../stores/chatStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useT } from '../../i18n';
+import { SlashPopover } from './SlashPopover';
+import type { SlashCommand } from '../../stores/commandStore';
 import type { AppConfig, ChatAttachment } from '../../../shared/types';
 
 const MODELS = [
@@ -45,6 +47,8 @@ export function InputArea() {
   const [createOpen, setCreateOpen] = useState(false);
   const [goalTracking, setGoalTracking] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [slashQuery, setSlashQuery] = useState('');
+  const [showSlashPopover, setShowSlashPopover] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -52,7 +56,7 @@ export function InputArea() {
   const isSendingRef = useRef(false);
   const {
     addMessage, isStreaming, setStreaming, appendToken, setThinking, failResponse,
-    addToolCall, finishToolCall, finishResponse,
+    addToolCall, finishToolCall, finishResponse, addToHistory, navigateHistory, resetHistoryIndex,
   } = useChatStore();
   const { config, setConfig } = useConfigStore();
   const t = useT();
@@ -71,6 +75,7 @@ export function InputArea() {
     if ((!trimmed && attachments.length === 0) || isStreaming || isSendingRef.current) return;
 
     isSendingRef.current = true;
+    addToHistory(trimmed);
     const attachmentSummary = attachments.length > 0
       ? `\n\n${attachments.map((item) => `[${item.kind}: ${item.name}]`).join(' ')}`
       : '';
@@ -100,7 +105,7 @@ export function InputArea() {
     }).finally(() => {
       isSendingRef.current = false;
     });
-  }, [input, attachments, goalTracking, isStreaming, addMessage, setStreaming, setThinking, failResponse]);
+  }, [input, attachments, goalTracking, isStreaming, addMessage, setStreaming, setThinking, failResponse, addToHistory]);
 
   handleSubmitRef.current = handleSubmit;
 
@@ -117,6 +122,13 @@ export function InputArea() {
     setAttachments((current) => [...current, ...selected].slice(0, 10));
     setMenuOpen(false);
     requestAnimationFrame(() => textareaRef.current?.focus());
+  }, []);
+
+  const handleSlashSelect = useCallback(async (cmd: SlashCommand) => {
+    setShowSlashPopover(false);
+    setSlashQuery('');
+    setInput('');
+    await cmd.action();
   }, []);
 
   const handleDrop = async (event: React.DragEvent) => {
@@ -204,12 +216,29 @@ export function InputArea() {
     const unsubToolStart = api.agent.onToolStart((tool) => addToolCall(tool));
     const unsubToolResult = api.agent.onToolResult((result) => finishToolCall(result));
     const unsubThinking = api.agent.onThinking(() => { setStreaming(true); setThinking(true); });
+    const unsubOverflow = api.agent.onContextOverflow?.((data) => {
+      if (data.action === 'auto_compact') {
+        addMessage({
+          id: Date.now().toString(36),
+          role: 'system',
+          content: '上下文窗口已满，正在自动压缩...',
+          timestamp: Date.now(),
+        });
+      } else {
+        addMessage({
+          id: Date.now().toString(36),
+          role: 'system',
+          content: '上下文窗口已满，自动压缩失败。请手动清空聊天或压缩上下文后重试。',
+          timestamp: Date.now(),
+        });
+      }
+    });
     return () => {
-      unsubToken(); unsubDone(); unsubError(); unsubToolStart(); unsubToolResult(); unsubThinking();
+      unsubToken(); unsubDone(); unsubError(); unsubToolStart(); unsubToolResult(); unsubThinking(); unsubOverflow?.();
       recognitionRef.current?.stop();
       api.agent.stop?.();
     };
-  }, [appendToken, finishResponse, setThinking, setStreaming, failResponse, addToolCall, finishToolCall]);
+  }, [appendToken, finishResponse, setThinking, setStreaming, failResponse, addToolCall, finishToolCall, addMessage]);
 
   return (
     <div
@@ -237,8 +266,47 @@ export function InputArea() {
         <textarea
           ref={textareaRef}
           value={input}
-          onChange={(event) => setInput(event.target.value)}
+          onChange={(event) => {
+            const value = event.target.value;
+            setInput(value);
+            resetHistoryIndex();
+
+            // Detect slash command
+            if (value.startsWith('/')) {
+              setSlashQuery(value);
+              setShowSlashPopover(true);
+            } else {
+              setShowSlashPopover(false);
+              setSlashQuery('');
+            }
+          }}
           onKeyDown={(event) => {
+            // Arrow up/down for input history (only when cursor is at first/last line)
+            if (event.key === 'ArrowUp' && !event.shiftKey) {
+              const textarea = event.currentTarget;
+              const cursorLine = textarea.value.substring(0, textarea.selectionStart).split('\n').length;
+              if (cursorLine === 1) {
+                const prev = navigateHistory('up');
+                if (prev !== null) {
+                  event.preventDefault();
+                  setInput(prev);
+                }
+              }
+            }
+
+            if (event.key === 'ArrowDown' && !event.shiftKey) {
+              const textarea = event.currentTarget;
+              const lines = textarea.value.split('\n');
+              const cursorLine = textarea.value.substring(0, textarea.selectionStart).split('\n').length;
+              if (cursorLine === lines.length) {
+                const next = navigateHistory('down');
+                if (next !== null) {
+                  event.preventDefault();
+                  setInput(next);
+                }
+              }
+            }
+
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
               handleSubmit();
@@ -326,6 +394,16 @@ export function InputArea() {
             {config.toolPreset === 'plan' && <span><Check size={11} />计划模式</span>}
             {goalTracking && <span><Target size={11} />追求目标</span>}
           </div>
+        )}
+        {showSlashPopover && (
+          <SlashPopover
+            query={slashQuery}
+            onSelect={handleSlashSelect}
+            onClose={() => {
+              setShowSlashPopover(false);
+              setSlashQuery('');
+            }}
+          />
         )}
       </div>
     </div>

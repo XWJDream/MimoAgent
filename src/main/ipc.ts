@@ -646,6 +646,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     IPC.TASK_LIST,
     IPC.TASK_CREATE,
     IPC.TASK_UPDATE,
+    'permission:respond',
   ].forEach((channel) => ipcMain.removeHandler(channel));
 
   [IPC.WINDOW_MINIMIZE, IPC.WINDOW_MAXIMIZE, IPC.WINDOW_CLOSE, IPC.AGENT_STOP].forEach((channel) => {
@@ -691,6 +692,22 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     });
 
     return { allowed: result.response === 0 };
+  });
+
+  // Permission response handler - resolves pending permission requests from frontend
+  ipcMain.handle('permission:respond', async (_, requestId: string, response: { allowed: boolean; always?: boolean; feedback?: string }) => {
+    const { pendingPermissions } = await import('./agent-service.js');
+    const pending = pendingPermissions.get(requestId);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      pendingPermissions.delete(requestId);
+      pending.resolve({
+        allowed: response.allowed,
+        always: response.always,
+        reason: response.feedback || undefined,
+      });
+    }
+    return { success: true };
   });
 
   ipcMain.handle(IPC.WORKSPACE_GET, () => getWorkspaceInfo());

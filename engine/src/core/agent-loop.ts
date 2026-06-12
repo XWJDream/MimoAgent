@@ -9,6 +9,7 @@ import { createValidator, type ValidationOptions, type ValidationResult } from '
 import { estimateMessageTokens, estimateTokens } from '../llm/tokenizer.js';
 import { pressureLevel as calcPressure, type OverflowInput } from '../context/overflow.js';
 import { microcompact } from '../context/compaction.js';
+import { parseAPIError } from '../llm/errors.js';
 import type { TaskRegistry } from '../task/registry.js';
 import { decideGate, type GateDecision } from '../task/gate.js';
 
@@ -25,6 +26,7 @@ export type LoopEvent =
   | { type: 'reflection'; prompt: string }
   | { type: 'done'; usage?: { prompt: number; completion: number; total: number } }
   | { type: 'error'; message: string }
+  | { type: 'context_overflow'; action: 'auto_compact' | 'manual_required' }
   | { type: 'context_pressure'; level: 0 | 1 | 2 | 3; usable: number; current: number }
   | { type: 'gate'; decision: GateDecision };
 
@@ -77,37 +79,95 @@ export async function* agentLoop(
     let completionTokens = 0;
     let cachedTokens = 0;
 
-    if (options.streaming) {
-      const stream = llmClient.chatStream(messages, tools, options.abortSignal);
-      for await (const event of stream) {
-        if (options.abortSignal?.aborted) {
-          yield { type: 'error', message: 'Agent run stopped' };
+    try {
+      if (options.streaming) {
+        const stream = llmClient.chatStream(messages, tools, options.abortSignal);
+        for await (const event of stream) {
+          if (options.abortSignal?.aborted) {
+            yield { type: 'error', message: 'Agent run stopped' };
+            return;
+          }
+          if (event.type === 'content_delta' && event.delta) {
+            options.onToken?.(event.delta);
+          }
+          if (event.type === 'finish' && event.usage) {
+            promptTokens = event.usage.promptTokens;
+            completionTokens = event.usage.completionTokens;
+            cachedTokens = event.usage.cachedTokens ?? 0;
+          }
+          collector.feed(event);
+        }
+      } else {
+        const response = await llmClient.chat(messages, tools, options.abortSignal);
+        promptTokens = response.usage.promptTokens;
+        completionTokens = response.usage.completionTokens;
+        cachedTokens = response.usage.cachedTokens ?? 0;
+        if (response.content) {
+          collector.feed({ type: 'content_delta', delta: response.content });
+        }
+        if (response.toolCalls) {
+          for (let i = 0; i < response.toolCalls.length; i++) {
+            const tc = response.toolCalls[i];
+            collector.feed({ type: 'tool_call_start', index: i, id: tc.id, name: tc.name });
+            collector.feed({ type: 'tool_call_delta', index: i, argumentsDelta: JSON.stringify(tc.arguments) });
+          }
+        }
+      }
+    } catch (llmError) {
+      const err = llmError instanceof Error ? llmError : new Error(String(llmError));
+      const parsed = parseAPIError(err);
+
+      if (parsed.type === 'context_overflow') {
+        yield { type: 'context_overflow', action: 'auto_compact' };
+
+        // Try auto-compaction: keep only the last 2 messages
+        const compacted = microcompact(messages, 2);
+        messages.length = 0;
+        messages.push(...compacted);
+
+        // Retry the LLM call once after compaction
+        try {
+          if (options.streaming) {
+            const stream = llmClient.chatStream(messages, tools, options.abortSignal);
+            for await (const event of stream) {
+              if (options.abortSignal?.aborted) {
+                yield { type: 'error', message: 'Agent run stopped' };
+                return;
+              }
+              if (event.type === 'content_delta' && event.delta) {
+                options.onToken?.(event.delta);
+              }
+              if (event.type === 'finish' && event.usage) {
+                promptTokens = event.usage.promptTokens;
+                completionTokens = event.usage.completionTokens;
+                cachedTokens = event.usage.cachedTokens ?? 0;
+              }
+              collector.feed(event);
+            }
+          } else {
+            const response = await llmClient.chat(messages, tools, options.abortSignal);
+            promptTokens = response.usage.promptTokens;
+            completionTokens = response.usage.completionTokens;
+            cachedTokens = response.usage.cachedTokens ?? 0;
+            if (response.content) {
+              collector.feed({ type: 'content_delta', delta: response.content });
+            }
+            if (response.toolCalls) {
+              for (let i = 0; i < response.toolCalls.length; i++) {
+                const tc = response.toolCalls[i];
+                collector.feed({ type: 'tool_call_start', index: i, id: tc.id, name: tc.name });
+                collector.feed({ type: 'tool_call_delta', index: i, argumentsDelta: JSON.stringify(tc.arguments) });
+              }
+            }
+          }
+        } catch (retryError) {
+          yield { type: 'context_overflow', action: 'manual_required' };
+          yield { type: 'error', message: parsed.message };
           return;
         }
-        if (event.type === 'content_delta' && event.delta) {
-          options.onToken?.(event.delta);
-        }
-        if (event.type === 'finish' && event.usage) {
-          promptTokens = event.usage.promptTokens;
-          completionTokens = event.usage.completionTokens;
-          cachedTokens = event.usage.cachedTokens ?? 0;
-        }
-        collector.feed(event);
-      }
-    } else {
-      const response = await llmClient.chat(messages, tools, options.abortSignal);
-      promptTokens = response.usage.promptTokens;
-      completionTokens = response.usage.completionTokens;
-      cachedTokens = response.usage.cachedTokens ?? 0;
-      if (response.content) {
-        collector.feed({ type: 'content_delta', delta: response.content });
-      }
-      if (response.toolCalls) {
-        for (let i = 0; i < response.toolCalls.length; i++) {
-          const tc = response.toolCalls[i];
-          collector.feed({ type: 'tool_call_start', index: i, id: tc.id, name: tc.name });
-          collector.feed({ type: 'tool_call_delta', index: i, argumentsDelta: JSON.stringify(tc.arguments) });
-        }
+      } else {
+        yield { type: 'error', message: parsed.message };
+        return;
       }
     }
 
