@@ -4,6 +4,7 @@ import { ToolCard } from './ToolCard';
 import { useChatStore } from '../../stores/chatStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useT } from '../../i18n';
+import { useToast } from '../common/Toast';
 
 interface ToolPanelProps {
   forceOpen?: boolean;
@@ -389,6 +390,7 @@ interface TaskItem {
 /** Task inspector panel in the sidebar */
 function TaskInspector() {
   const t = useT();
+  const { toast } = useToast();
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -399,10 +401,11 @@ function TaskInspector() {
       if (result?.tasks) {
         setTasks(result.tasks);
       }
-    } catch {
-      // Silently fail - task registry may not be initialized
+    } catch (err) {
+      console.error('Failed to load tasks:', err);
+      toast('加载任务失败', 'error');
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     refreshTasks();

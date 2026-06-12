@@ -796,10 +796,33 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     });
   });
   ipcMain.handle(IPC.FILE_LIST, async (_, path?: string) => listFiles(path));
-  ipcMain.handle(IPC.FILE_READ, (_, path: string) => readWorkspaceFile(path));
+  ipcMain.handle(IPC.FILE_READ, (_, filePath: string) => {
+    // Allow reading from truncated output temp directory
+    const truncatedDir = join(os.tmpdir(), 'mimo-truncated-outputs');
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    if (normalizedPath.startsWith(truncatedDir.replace(/\\/g, '/'))) {
+      if (!existsSync(filePath)) throw new Error('File not found');
+      const stats = statSync(filePath);
+      if (!stats.isFile()) throw new Error('Path is not a file');
+      return readFileSync(filePath, 'utf8');
+    }
+    return readWorkspaceFile(filePath);
+  });
   ipcMain.handle(IPC.FILE_WRITE, (_, path: string, content: string) => {
     writeWorkspaceFile(path, content);
     return { success: true };
+  });
+
+  // Read truncated output file from temp directory
+  ipcMain.handle(IPC.TOOL_READ_OUTPUT, (_, filePath: string) => {
+    const truncatedDir = join(os.tmpdir(), 'mimo-truncated-outputs');
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    const normalizedDir = truncatedDir.replace(/\\/g, '/');
+    if (!normalizedPath.startsWith(normalizedDir)) {
+      throw new Error('Access denied: path outside truncated output directory');
+    }
+    if (!existsSync(filePath)) throw new Error('File not found');
+    return readFileSync(filePath, 'utf8');
   });
 
   ipcMain.on(IPC.WINDOW_MINIMIZE, () => mainWindow.minimize());

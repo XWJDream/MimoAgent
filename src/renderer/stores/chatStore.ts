@@ -91,7 +91,7 @@ interface ChatState {
   setStreaming: (streaming: boolean) => void;
   appendToken: (token: string) => void;
   addToolCall: (tool: Pick<ToolCallInfo, 'name' | 'args'>) => void;
-  finishToolCall: (result: Pick<ToolCallInfo, 'name' | 'output'> & { isError: boolean; truncated?: boolean }) => void;
+  finishToolCall: (result: Pick<ToolCallInfo, 'name' | 'output'> & { isError: boolean; truncated?: boolean; outputPath?: string }) => void;
   finishResponse: (usage: { tokens: number; cost: number; cachedTokens?: number; promptTokens?: number; completionTokens?: number }) => void;
   failResponse: (error: string) => void;
   clearMessages: (sessionId?: string) => void;
@@ -235,6 +235,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         status: result.isError ? 'error' : 'done',
         output: result.output,
         truncated: result.truncated,
+        outputPath: result.outputPath,
       };
 
       return { toolCalls: nextCalls };

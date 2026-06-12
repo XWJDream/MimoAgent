@@ -114,6 +114,7 @@ export interface ToolCallInfo {
   output?: string;
   duration?: number;
   truncated?: boolean;
+  outputPath?: string;
 }
 
 export interface ToolResultInfo {

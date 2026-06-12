@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { ToolCallInfo } from '@shared/types';
 import { Check, ChevronDown, Loader, X } from 'lucide-react';
 import { DiffViewer } from './DiffViewer';
+import { useToast } from '../common/Toast';
 
 interface ToolCardProps {
   tool: ToolCallInfo;
@@ -18,6 +19,9 @@ function isDiffOutput(output: string): boolean {
 export function ToolCard({ tool }: ToolCardProps) {
   const [expanded, setExpanded] = useState(tool.status === 'running');
   const [showFullOutput, setShowFullOutput] = useState(false);
+  const [fullOutputContent, setFullOutputContent] = useState<string | null>(null);
+  const [loadingFullOutput, setLoadingFullOutput] = useState(false);
+  const { toast } = useToast();
   const StatusIcon = { running: Loader, done: Check, error: X }[tool.status];
   const isEditTool = EDIT_TOOLS.has(tool.name);
   const showDiff = tool.output && (isEditTool || isDiffOutput(tool.output));
@@ -58,9 +62,32 @@ export function ToolCard({ tool }: ToolCardProps) {
                     type="button"
                     className="text-[10px] underline"
                     style={{ color: 'var(--text-muted)' }}
-                    onClick={(e) => { e.stopPropagation(); setShowFullOutput(!showFullOutput); }}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (showFullOutput) {
+                        setShowFullOutput(false);
+                        return;
+                      }
+                      if (tool.outputPath && !fullOutputContent) {
+                        setLoadingFullOutput(true);
+                        try {
+                          const content = await (window as unknown as { api?: { tool?: { readOutput: (p: string) => Promise<string> } } }).api?.tool?.readOutput(tool.outputPath);
+                          if (content) {
+                            setFullOutputContent(content);
+                          } else {
+                            setFullOutputContent(tool.output || '');
+                          }
+                        } catch {
+                          toast('读取完整输出失败', 'error');
+                          setFullOutputContent(tool.output || '');
+                        } finally {
+                          setLoadingFullOutput(false);
+                        }
+                      }
+                      setShowFullOutput(true);
+                    }}
                   >
-                    {showFullOutput ? '收起完整输出' : '查看完整输出'}
+                    {loadingFullOutput ? '加载中...' : showFullOutput ? '收起完整输出' : '查看完整输出'}
                   </button>
                 )}
               </div>
@@ -71,7 +98,7 @@ export function ToolCard({ tool }: ToolCardProps) {
       )}
 
       {/* Full output modal */}
-      {showFullOutput && tool.output && (
+      {showFullOutput && (fullOutputContent || tool.output) && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.5)' }}
@@ -88,7 +115,7 @@ export function ToolCard({ tool }: ToolCardProps) {
                 <X size={14} />
               </button>
             </div>
-            <pre className="font-mono text-xs whitespace-pre-wrap break-words leading-relaxed">{tool.output}</pre>
+            <pre className="font-mono text-xs whitespace-pre-wrap break-words leading-relaxed">{fullOutputContent || tool.output}</pre>
           </div>
         </div>
       )}

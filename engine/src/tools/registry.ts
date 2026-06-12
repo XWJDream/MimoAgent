@@ -89,6 +89,7 @@ export class ToolRegistry {
               truncated: true,
               originalLength: truncated.originalLength,
               truncatedLength: truncated.truncatedLength,
+              outputPath: truncated.outputPath,
             },
           };
         }

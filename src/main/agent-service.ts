@@ -328,6 +328,7 @@ export class AgentService {
             output: result.output,
             isError: result.isError,
             truncated: result.metadata?.truncated === true,
+            outputPath: result.metadata?.outputPath as string | undefined,
           });
 
           // Supervisor: check tool output for code quality violations

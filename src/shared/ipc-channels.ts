@@ -90,4 +90,6 @@ export const IPC = {
   TASK_LIST: 'task:list',
   TASK_CREATE: 'task:create',
   TASK_UPDATE: 'task:update',
+
+  TOOL_READ_OUTPUT: 'tool:read-output',
 } as const;

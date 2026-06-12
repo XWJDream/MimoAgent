@@ -131,7 +131,7 @@ export function archiveSession(id: string): SessionRow | undefined {
   return updateSession(id, { status: 'archived' });
 }
 
-/** 分叉会话：复制会话及其所有消息 */
+/** 分叉会话：复制会话及其所有消息和工具调用 */
 export function forkSession(id: string, title: string): SessionRow | undefined {
   const db = getDatabase();
   const original = getSession(id);
@@ -167,9 +167,14 @@ export function forkSession(id: string, title: string): SessionRow | undefined {
       VALUES (@id, @session_id, @role, @content, @timestamp, @agent_id)
     `);
 
+    // 维护旧消息 ID → 新消息 ID 的映射
+    const idMap = new Map<string, string>();
+
     for (const msg of messages) {
+      const newMsgId = generateId();
+      idMap.set(msg.id, newMsgId);
       insertMsg.run({
-        id: generateId(),
+        id: newMsgId,
         session_id: newId,
         role: msg.role,
         content: msg.content,
@@ -177,6 +182,43 @@ export function forkSession(id: string, title: string): SessionRow | undefined {
         agent_id: msg.agent_id,
       });
     }
+
+    // 复制工具调用（使用 idMap 关联到新消息）
+    const toolCalls = db.prepare(
+      `SELECT tc.* FROM tool_calls tc
+       JOIN messages m ON tc.message_id = m.id
+       WHERE m.session_id = ?`
+    ).all(id) as Array<{
+      id: string; message_id: string; name: string; args: string | null;
+      output: string | null; is_error: number; status: string;
+      started_at: number | null; completed_at: number | null;
+    }>;
+
+    if (toolCalls.length > 0) {
+      const insertToolCall = db.prepare(`
+        INSERT INTO tool_calls (id, message_id, name, args, output, is_error, status, started_at, completed_at)
+        VALUES (@id, @message_id, @name, @args, @output, @is_error, @status, @started_at, @completed_at)
+      `);
+
+      for (const tc of toolCalls) {
+        const newMsgId = idMap.get(tc.message_id);
+        if (!newMsgId) continue; // 跳过无法映射的工具调用
+        insertToolCall.run({
+          id: generateId(),
+          message_id: newMsgId,
+          name: tc.name,
+          args: tc.args,
+          output: tc.output,
+          is_error: tc.is_error,
+          status: tc.status,
+          started_at: tc.started_at,
+          completed_at: tc.completed_at,
+        });
+      }
+    }
+
+    // 更新消息计数
+    db.prepare('UPDATE sessions SET message_count = ? WHERE id = ?').run(messages.length, newId);
   });
 
   forkTx();

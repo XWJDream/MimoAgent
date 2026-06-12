@@ -5,7 +5,10 @@
 import type { Task } from './schema.js';
 import { TaskRegistry } from './registry.js';
 
-const MAX_GATE_REACT = 3;
+export type GateMode = 'main' | 'subagent';
+
+const MAX_GATE_REACT_MAIN = 3;
+const MAX_GATE_REACT_SUBAGENT = 2;
 
 export interface GateDecision {
   action: 'continue' | 'stop';
@@ -18,37 +21,42 @@ export interface GateDecision {
  * @param registry 任务注册中心
  * @param sessionId 当前会话 ID
  * @param reactCount 当前已重入次数
+ * @param mode 运行模式：main（主循环）或 subagent（子代理）
  */
 export function decideGate(
   registry: TaskRegistry,
   sessionId: string,
   reactCount: number,
+  mode: GateMode = 'main',
 ): GateDecision {
+  const maxReact = mode === 'subagent' ? MAX_GATE_REACT_SUBAGENT : MAX_GATE_REACT_MAIN;
+
   const all = registry.list(sessionId);
-  const incomplete = all.filter(
-    t => t.status === 'open' || t.status === 'in_progress' || t.status === 'blocked',
+  // blocked 任务是 agent 无法自行解决的依赖，不应触发重入
+  const actionable = all.filter(
+    t => t.status === 'open' || t.status === 'in_progress',
   );
 
   // 所有任务已完成，可以停止
-  if (incomplete.length === 0) {
+  if (actionable.length === 0) {
     return { action: 'stop' };
   }
 
   // 达到最大重入次数，强制停止
-  if (reactCount >= MAX_GATE_REACT) {
+  if (reactCount >= maxReact) {
     return {
       action: 'stop',
-      reason: `达到最大重入次数 (${MAX_GATE_REACT})，强制退出`,
-      incompleteTasks: incomplete,
+      reason: `达到最大重入次数 (${maxReact})，强制退出`,
+      incompleteTasks: actionable,
     };
   }
 
-  // 还有未完成任务，继续执行
+  // 还有可执行任务，继续执行
   return {
     action: 'continue',
-    reason: `还有 ${incomplete.length} 个未完成任务: ${incomplete.map(t => t.id).join(', ')}`,
-    incompleteTasks: incomplete,
+    reason: `还有 ${actionable.length} 个可执行任务: ${actionable.map(t => t.id).join(', ')}`,
+    incompleteTasks: actionable,
   };
 }
 
-export { MAX_GATE_REACT };
+export { MAX_GATE_REACT_MAIN, MAX_GATE_REACT_SUBAGENT };

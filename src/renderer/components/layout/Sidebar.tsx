@@ -247,6 +247,16 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
                   outline: 'none',
                 }}
               />
+              {searching && (
+                <div style={{ padding: '8px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                  搜索中...
+                </div>
+              )}
+              {searchOpen && searchQuery && !searching && searchResults.length === 0 && (
+                <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                  未找到匹配的会话
+                </div>
+              )}
             </div>
           ) : (
             <div className="codex-section-title">{t('sidebar.conversations')}</div>

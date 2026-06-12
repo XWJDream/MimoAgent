@@ -120,7 +120,11 @@ export class TaskRegistry {
         parts.push('ended_at = ?');
         values.push(now);
       }
-      this.recordEvent(taskId, sessionId, statusToEventType(updates.status));
+      // 特殊处理 blocked → open：事件类型为 'unblocked' 而非 'created'
+      const eventType = task.status === 'blocked' && updates.status === 'open'
+        ? 'unblocked' as const
+        : statusToEventType(updates.status);
+      this.recordEvent(taskId, sessionId, eventType);
     }
 
     if (parts.length === 0) return task;
@@ -153,9 +157,9 @@ export class TaskRegistry {
     return this.update(sessionId, taskId, { status: 'blocked' });
   }
 
-  /** blocked → in_progress */
+  /** blocked → open */
   unblock(sessionId: string, taskId: string): Task {
-    return this.update(sessionId, taskId, { status: 'in_progress' });
+    return this.update(sessionId, taskId, { status: 'open' });
   }
 
   /** in_progress → done */

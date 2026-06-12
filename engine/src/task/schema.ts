@@ -30,7 +30,7 @@ export interface TaskEvent {
 export const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   open: ['in_progress', 'abandoned'],
   in_progress: ['blocked', 'done', 'abandoned'],
-  blocked: ['in_progress', 'abandoned'],
+  blocked: ['open', 'in_progress', 'abandoned'],
   done: [],                // 终态
   abandoned: [],           // 终态
 };

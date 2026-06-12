@@ -5,7 +5,20 @@
  *   1. Short outputs pass through unchanged.
  *   2. Long outputs are split into head + tail with a truncation hint in the middle.
  *   3. Special tools (read_file, shell, grep, glob) get format-aware truncation.
+ *   4. When truncation occurs, the full output is saved to disk for later retrieval.
  */
+
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+
+const TRUNCATED_OUTPUT_DIR = path.join(os.tmpdir(), 'mimo-truncated-outputs');
+
+function ensureOutputDir(): void {
+  if (!fs.existsSync(TRUNCATED_OUTPUT_DIR)) {
+    fs.mkdirSync(TRUNCATED_OUTPUT_DIR, { recursive: true });
+  }
+}
 
 export interface TruncateOptions {
   /** Maximum allowed character length (default 50 000) */
@@ -29,6 +42,8 @@ export interface TruncatedOutput {
   truncatedLength: number;
   /** The inserted truncation hint, if any */
   hint?: string;
+  /** Path to the file containing the full (untruncated) output */
+  outputPath?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -62,11 +77,35 @@ export function truncateOutput(
 
   // Delegate to tool-specific strategy when a tool name is given
   if (toolName) {
-    return truncateForTool(output, toolName, maxOutputLength);
+    const result = truncateForTool(output, toolName, maxOutputLength);
+    if (result.truncated) {
+      result.outputPath = saveFullOutput(output);
+    }
+    return result;
   }
 
   // Generic head+tail truncation
-  return truncateGeneric(output, maxOutputLength, headRatio, tailRatio);
+  const result = truncateGeneric(output, maxOutputLength, headRatio, tailRatio);
+  if (result.truncated) {
+    result.outputPath = saveFullOutput(output);
+  }
+  return result;
+}
+
+/**
+ * Save the full (untruncated) output to a temp file for later retrieval.
+ */
+function saveFullOutput(output: string): string {
+  try {
+    ensureOutputDir();
+    const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`;
+    const filepath = path.join(TRUNCATED_OUTPUT_DIR, filename);
+    fs.writeFileSync(filepath, output, 'utf-8');
+    return filepath;
+  } catch {
+    // If disk save fails, truncation still works — just without full output retrieval
+    return '';
+  }
 }
 
 // ---------------------------------------------------------------------------

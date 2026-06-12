@@ -78,6 +78,8 @@ const IPC = {
   TASK_LIST: 'task:list',
   TASK_CREATE: 'task:create',
   TASK_UPDATE: 'task:update',
+
+  TOOL_READ_OUTPUT: 'tool:read-output',
 } as const;
 
 const api = {
@@ -96,8 +98,8 @@ const api = {
       ipcRenderer.on(IPC.AGENT_TOOL_START, handler);
       return () => ipcRenderer.removeListener(IPC.AGENT_TOOL_START, handler);
     },
-    onToolResult: (cb: (result: { name: string; output: string; isError: boolean; truncated?: boolean }) => void) => {
-      const handler = (_: unknown, result: { name: string; output: string; isError: boolean; truncated?: boolean }) => cb(result);
+    onToolResult: (cb: (result: { name: string; output: string; isError: boolean; truncated?: boolean; outputPath?: string }) => void) => {
+      const handler = (_: unknown, result: { name: string; output: string; isError: boolean; truncated?: boolean; outputPath?: string }) => cb(result);
       ipcRenderer.on(IPC.AGENT_TOOL_RESULT, handler);
       return () => ipcRenderer.removeListener(IPC.AGENT_TOOL_RESULT, handler);
     },
@@ -269,6 +271,11 @@ const api = {
     list: (sessionId?: string, statusFilter?: string) => ipcRenderer.invoke(IPC.TASK_LIST, sessionId, statusFilter),
     create: (summary: string, parentId?: string, sessionId?: string) => ipcRenderer.invoke(IPC.TASK_CREATE, summary, parentId, sessionId),
     update: (taskId: string, updates: Record<string, unknown>, sessionId?: string) => ipcRenderer.invoke(IPC.TASK_UPDATE, taskId, updates, sessionId),
+  },
+
+  // Tool output reading (for truncated outputs saved to disk)
+  tool: {
+    readOutput: (filePath: string) => ipcRenderer.invoke(IPC.TOOL_READ_OUTPUT, filePath),
   },
 
   // Generic event listeners

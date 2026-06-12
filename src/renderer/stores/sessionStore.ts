@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Session, WorkspaceInfo } from '@shared/types';
+import { useToastStore } from './toastStore';
 
 interface SessionState {
   sessions: Session[];
@@ -141,6 +142,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       set({ searchResults: results || [], searching: false });
     } catch (err) {
       console.error('Failed to search sessions:', err);
+      useToastStore.getState().addToast('搜索会话失败', 'error');
       set({ searchResults: [], searching: false });
     }
   },

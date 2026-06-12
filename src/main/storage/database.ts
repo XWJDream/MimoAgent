@@ -66,6 +66,7 @@ export function initDatabase(userDataPath: string): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, timestamp);
     CREATE INDEX IF NOT EXISTS idx_tool_calls_message ON tool_calls(message_id);
     CREATE INDEX IF NOT EXISTS idx_usage_session ON usage_records(session_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_title ON sessions(title);
   `);
 
   return db;
