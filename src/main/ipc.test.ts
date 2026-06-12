@@ -83,6 +83,45 @@ vi.mock('./tts-store.js', () => ({
   },
 }));
 
+vi.mock('./storage/database.js', () => ({
+  initDatabase: vi.fn(),
+  getDatabase: vi.fn(),
+  _resetDatabase: vi.fn(),
+}));
+
+vi.mock('./storage/session-repo.js', () => ({
+  listSessions: vi.fn().mockReturnValue([]),
+  getSession: vi.fn().mockReturnValue(undefined),
+  createSession: vi.fn().mockImplementation((data: { id?: string; title: string }) => ({
+    id: data.id || `${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`,
+    title: data.title,
+    workspace_path: '',
+    workspace_name: '',
+    parent_id: null,
+    status: 'active',
+    created_at: Date.now(),
+    updated_at: Date.now(),
+    message_count: 0,
+  })),
+  updateSession: vi.fn(),
+  deleteSession: vi.fn(),
+  archiveSession: vi.fn(),
+  forkSession: vi.fn(),
+  searchSessions: vi.fn().mockReturnValue([]),
+}));
+
+vi.mock('./storage/message-repo.js', () => ({
+  listMessages: vi.fn().mockReturnValue([]),
+  saveMessages: vi.fn().mockReturnValue(0),
+  appendMessage: vi.fn(),
+  deleteMessagesBySession: vi.fn(),
+  getMessageCount: vi.fn().mockReturnValue(0),
+}));
+
+vi.mock('./storage/migrate.js', () => ({
+  migrateFromJson: vi.fn().mockResolvedValue({ sessions: 0, messages: 0 }),
+}));
+
 const { migrateStoredConfig, registerIpcHandlers } = await import('./ipc.js');
 const { dialog: mockedDialog } = await import('electron');
 
@@ -240,40 +279,26 @@ describe('ipc', () => {
     });
   });
 
-  describe('MESSAGES_SAVE - sanitizeSessionId', () => {
-    it('should sanitize path traversal sequences in session ID', async () => {
-      mockWriteFileSync.mockClear();
+  describe('MESSAGES_SAVE - SQLite storage', () => {
+    it('should save messages via SQLite repo', async () => {
       const handler = handlers.get('messages:save')!;
-      const result = await handler({}, '../../../etc/passwd', []);
+      const result = await handler({}, 'test-session', [{ id: 'm1', role: 'user', content: 'hello', timestamp: Date.now() }]);
       expect(result.success).toBe(true);
-      const writeCall = mockWriteFileSync.mock.calls.find((c: unknown[]) =>
-        typeof c[0] === 'string' && (c[0] as string).endsWith('.json')
-      );
-      expect(writeCall).toBeDefined();
-      expect((writeCall as unknown[])[0]).not.toContain('..');
     });
 
-    it('should sanitize backslash path separators in session ID', async () => {
-      mockWriteFileSync.mockClear();
+    it('should handle empty messages array', async () => {
       const handler = handlers.get('messages:save')!;
-      await handler({}, '..\\..\\secret', []);
-      const writeCall = mockWriteFileSync.mock.calls.find((c: unknown[]) =>
-        typeof c[0] === 'string' && (c[0] as string).endsWith('.json')
-      );
-      // The filename portion should not contain the original malicious input
-      const filename = ((writeCall as unknown[])[0] as string).split(/[/\\]/).pop()!;
-      expect(filename).not.toContain('..');
-      expect(filename).toBe('____secret.json');
+      const result = await handler({}, 'test-session', []);
+      expect(result.success).toBe(true);
     });
 
-    it('should keep normal session IDs intact', async () => {
-      mockWriteFileSync.mockClear();
+    it('should handle wrapped message format', async () => {
       const handler = handlers.get('messages:save')!;
-      await handler({}, 'normal-session-id', []);
-      const writeCall = mockWriteFileSync.mock.calls.find((c: unknown[]) =>
-        typeof c[0] === 'string' && (c[0] as string).endsWith('.json')
-      );
-      expect((writeCall as unknown[])[0]).toContain('normal-session-id');
+      const result = await handler({}, 'test-session', {
+        messages: [{ id: 'm1', role: 'user', content: 'hello', timestamp: Date.now() }],
+        usage: { sessionTokens: 100 },
+      });
+      expect(result.success).toBe(true);
     });
   });
 });

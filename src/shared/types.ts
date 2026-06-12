@@ -6,7 +6,7 @@ export interface IpcChannels {
   'agent:clear': () => void;
   'agent:token': (token: string) => void;
   'agent:tool-start': (tool: { name: string; args: Record<string, unknown> }) => void;
-  'agent:tool-result': (result: { name: string; output: string; isError: boolean }) => void;
+  'agent:tool-result': (result: { name: string; output: string; isError: boolean; truncated?: boolean }) => void;
   'agent:done': (usage: { tokens: number; cost: number; cachedTokens?: number }) => void;
   'agent:error': (error: string) => void;
   'agent:thinking': () => void;
@@ -113,6 +113,7 @@ export interface ToolCallInfo {
   status: 'running' | 'done' | 'error';
   output?: string;
   duration?: number;
+  truncated?: boolean;
 }
 
 export interface ToolResultInfo {
@@ -229,4 +230,20 @@ export interface CollaborationTask {
   toolCalls: number;
   inputTokens: number;
   outputTokens: number;
+}
+
+// Task system types (for IPC between main and renderer)
+export type TaskStatus = 'open' | 'in_progress' | 'blocked' | 'done' | 'abandoned';
+
+export interface TaskInfo {
+  id: string;
+  sessionId: string;
+  parentId?: string;
+  status: TaskStatus;
+  summary: string;
+  owner?: string;
+  createdAt: number;
+  updatedAt: number;
+  endedAt?: number;
+  children?: TaskInfo[];
 }

@@ -215,6 +215,18 @@ export default {
   'inspector.status.streaming': 'Streaming',
   'inspector.status.ready': 'Ready',
 
+  // Task
+  'task.title': 'Tasks',
+  'task.empty': 'No tasks',
+  'task.create': 'Create Task',
+  'task.open': 'Open',
+  'task.in_progress': 'In Progress',
+  'task.blocked': 'Blocked',
+  'task.done': 'Done',
+  'task.abandoned': 'Abandoned',
+  'task.count': '{{count}} tasks',
+  'task.incomplete': '{{count}} incomplete',
+
   // Plugin
   'plugin.title': 'Plugin Manager',
   'plugin.builtinTools': 'Built-in Tools',

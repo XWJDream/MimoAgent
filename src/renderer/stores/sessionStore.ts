@@ -5,6 +5,8 @@ interface SessionState {
   sessions: Session[];
   activeSessionId: string;
   loaded: boolean;
+  searchResults: Session[];
+  searching: boolean;
 
   setSessions: (sessions: Session[]) => void;
   setActiveSession: (id: string) => void;
@@ -14,6 +16,10 @@ interface SessionState {
   setSessionWorkspace: (id: string, workspace: WorkspaceInfo) => void;
   loadSessions: () => Promise<void>;
   saveSessions: () => Promise<void>;
+  forkSession: (id: string, title: string) => Promise<Session | null>;
+  archiveSession: (id: string) => Promise<void>;
+  searchSessions: (query: string) => Promise<void>;
+  clearSearch: () => void;
 }
 
 const DEFAULT_SESSION: Session = {
@@ -28,6 +34,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [DEFAULT_SESSION],
   activeSessionId: 'default',
   loaded: false,
+  searchResults: [],
+  searching: false,
 
   setSessions: (sessions) => {
     set({ sessions });
@@ -96,4 +104,46 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       console.error('Failed to save sessions:', err);
     }
   },
+
+  forkSession: async (id, title) => {
+    try {
+      const session = await window.api?.session?.fork(id, title);
+      if (session) {
+        set((state) => ({ sessions: [...state.sessions, session] }));
+        return session;
+      }
+      return null;
+    } catch (err) {
+      console.error('Failed to fork session:', err);
+      return null;
+    }
+  },
+
+  archiveSession: async (id) => {
+    try {
+      await window.api?.session?.archive(id);
+      set((state) => ({
+        sessions: state.sessions.map(s => s.id === id ? { ...s, updatedAt: new Date().toISOString() } : s),
+      }));
+    } catch (err) {
+      console.error('Failed to archive session:', err);
+    }
+  },
+
+  searchSessions: async (query) => {
+    if (!query.trim()) {
+      set({ searchResults: [], searching: false });
+      return;
+    }
+    set({ searching: true });
+    try {
+      const results = await window.api?.session?.search(query);
+      set({ searchResults: results || [], searching: false });
+    } catch (err) {
+      console.error('Failed to search sessions:', err);
+      set({ searchResults: [], searching: false });
+    }
+  },
+
+  clearSearch: () => set({ searchResults: [], searching: false }),
 }));

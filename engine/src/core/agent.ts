@@ -12,6 +12,7 @@ import { UsageTracker } from '../context/usage-tracker.js';
 import { shouldCompact, compactMessages, estimateConversationTokens } from '../context/compaction.js';
 import { SandboxManager } from '../sandbox/manager.js';
 import { MemoryService } from '../memory/service.js';
+import { TaskRegistry } from '../task/registry.js';
 import type { ChatCompletionTool } from 'openai/resources/chat/completions';
 
 export class Agent {
@@ -30,6 +31,8 @@ export class Agent {
   private memoryService: MemoryService | null = null;
   private memorySearchTool: MemorySearchTool | null = null;
   private userDataPath: string;
+  private taskRegistry: TaskRegistry | null = null;
+  private sessionId: string = 'default';
 
   constructor(config: MimoConfig, workspace?: string, userDataPath?: string) {
     this.config = config;
@@ -74,6 +77,22 @@ export class Agent {
       console.warn('[Agent] Memory service init failed, continuing without FTS memory:', err);
     }
 
+    // Initialize task registry (SQLite)
+    try {
+      const Database = (await import('better-sqlite3')).default;
+      const { join } = await import('node:path');
+      const { existsSync, mkdirSync } = await import('node:fs');
+      const taskDbDir = this.userDataPath;
+      if (!existsSync(taskDbDir)) mkdirSync(taskDbDir, { recursive: true });
+      const taskDbPath = join(taskDbDir, 'mimo-tasks.db');
+      const taskDb = new Database(taskDbPath);
+      taskDb.pragma('journal_mode = WAL');
+      this.taskRegistry = new TaskRegistry(taskDb);
+      console.log('[Agent] Task registry initialized');
+    } catch (err) {
+      console.warn('[Agent] Task registry init failed, continuing without task system:', err);
+    }
+
     // Initialize sandbox if enabled
     if (this.sandboxManager) {
       try {
@@ -92,12 +111,19 @@ export class Agent {
       subAgents: this.config.subAgents,
       getPermissionChecker: () => this.permissionChecker,
       memorySearchTool: this.memorySearchTool || undefined,
+      taskRegistry: this.taskRegistry || undefined,
+      sessionId: this.sessionId,
     });
     this.toolRegistry.setContext({
       workingDirectory: this.workspace,
       fileCache: this.fileCache,
       sandboxManager: this.sandboxManager || undefined,
     });
+
+    // Configure tool output truncation
+    if (this.config.toolOutput) {
+      this.toolRegistry.setOutputConfig(this.config.toolOutput);
+    }
 
     // Build system prompt
     const systemPrompt = buildSystemPrompt(this.config, this.memory.getContent(), this.workspace);
@@ -154,6 +180,8 @@ export class Agent {
       abortSignal: options?.abortSignal,
       contextWindow: this.config.contextWindow,
       maxOutputTokens: this.config.maxTokens,
+      taskRegistry: this.taskRegistry || undefined,
+      sessionId: this.sessionId,
       ...options,
     };
 
@@ -216,6 +244,18 @@ export class Agent {
 
   getMemoryService(): MemoryService | null {
     return this.memoryService;
+  }
+
+  getTaskRegistry(): TaskRegistry | null {
+    return this.taskRegistry;
+  }
+
+  setSessionId(sessionId: string): void {
+    this.sessionId = sessionId;
+  }
+
+  getSessionId(): string {
+    return this.sessionId;
   }
 
   setHooks(hooks: AgentHooks): void {

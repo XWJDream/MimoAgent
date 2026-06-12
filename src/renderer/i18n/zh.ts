@@ -216,6 +216,18 @@ export default {
   'inspector.status.streaming': '输出中',
   'inspector.status.ready': '就绪',
 
+  // Task
+  'task.title': '任务',
+  'task.empty': '暂无任务',
+  'task.create': '创建任务',
+  'task.open': '待开始',
+  'task.in_progress': '进行中',
+  'task.blocked': '已阻塞',
+  'task.done': '已完成',
+  'task.abandoned': '已放弃',
+  'task.count': '{{count}} 个任务',
+  'task.incomplete': '{{count}} 个未完成',
+
   // Plugin
   'plugin.title': '插件管理',
   'plugin.builtinTools': '内置工具',

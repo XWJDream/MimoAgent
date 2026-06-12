@@ -15,6 +15,10 @@ import { AgentService } from './agent-service.js';
 import { runRules } from './supervisor-rules.js';
 import type { Violation } from './supervisor-rules.js';
 import { ttsAudioStore } from './tts-store.js';
+import { initDatabase } from './storage/database.js';
+import * as sessionRepo from './storage/session-repo.js';
+import * as messageRepo from './storage/message-repo.js';
+import { migrateFromJson } from './storage/migrate.js';
 
 // Module-level ref to the main window, set once registerIpcHandlers is called
 let mainWindowRef: BrowserWindow | null = null;
@@ -49,6 +53,19 @@ const AUTOMATION_RULES_FILE = join(app.getPath('userData'), 'automation-rules.js
 const AUTOMATION_EXECUTIONS_FILE = join(app.getPath('userData'), 'automation-executions.json');
 const CONFIG_FILE = join(app.getPath('userData'), 'config.json');
 const CONFIG_SCHEMA_VERSION = 1;
+
+// 数据库延迟初始化标记
+let dbInitialized = false;
+
+function ensureDbInitialized(): void {
+  if (dbInitialized) return;
+  dbInitialized = true;
+  const userDataPath = app.getPath('userData');
+  initDatabase(userDataPath);
+  migrateFromJson(userDataPath).then(({ sessions: s, messages: m }) => {
+    if (s > 0 || m > 0) console.log(`[Migrate] Migrated ${s} sessions, ${m} messages from JSON to SQLite`);
+  }).catch(err => console.warn('[Migrate] Migration failed:', err));
+}
 
 interface StoredConfig extends Partial<AppConfig> {
   configSchemaVersion?: number;
@@ -363,6 +380,19 @@ function createDefaultSession(): Session {
   };
 }
 
+/** 将 SQLite 行转换为前端 Session 类型 */
+function rowToSession(row: sessionRepo.SessionRow): Session {
+  return {
+    id: row.id,
+    name: row.title,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+    messageCount: row.message_count,
+    workspacePath: row.workspace_path,
+    workspaceName: row.workspace_name,
+  };
+}
+
 function normalizeSessions(value: unknown): Session[] {
   if (!Array.isArray(value)) return [createDefaultSession()];
   const normalized = value
@@ -386,23 +416,61 @@ function normalizeSessions(value: unknown): Session[] {
 
 function loadSessionsFromDisk(): Session[] {
   try {
-    if (!existsSync(SESSIONS_FILE)) return [createDefaultSession()];
-    const data = readFileSync(SESSIONS_FILE, 'utf-8');
-    return normalizeSessions(JSON.parse(data));
+    ensureDbInitialized();
+    const rows = sessionRepo.listSessions();
+    if (rows.length === 0) {
+      // 确保默认会话存在
+      const existing = sessionRepo.getSession('default');
+      if (!existing) {
+        sessionRepo.createSession({ id: 'default', title: '新对话' });
+      }
+      return [createDefaultSession()];
+    }
+    return rows.map(rowToSession);
   } catch (err) {
-    console.warn('[SESSIONS_LOAD] Failed to load sessions:', err);
-    return [createDefaultSession()];
+    console.warn('[SESSIONS_LOAD] Failed to load sessions from SQLite:', err);
+    // 回退到 JSON 文件
+    try {
+      if (!existsSync(SESSIONS_FILE)) return [createDefaultSession()];
+      const data = readFileSync(SESSIONS_FILE, 'utf-8');
+      return normalizeSessions(JSON.parse(data));
+    } catch {
+      return [createDefaultSession()];
+    }
   }
 }
 
 function saveSessionsToDisk(sessionsData: Session[]): { success: boolean; error?: string } {
   try {
-    const dir = join(SESSIONS_FILE, '..');
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(SESSIONS_FILE, JSON.stringify(sessionsData, null, 2));
+    ensureDbInitialized();
+    for (const s of sessionsData) {
+      const existing = sessionRepo.getSession(s.id);
+      if (existing) {
+        sessionRepo.updateSession(s.id, {
+          title: s.name,
+          workspacePath: s.workspacePath,
+          workspaceName: s.workspaceName,
+        });
+      } else {
+        sessionRepo.createSession({
+          id: s.id,
+          title: s.name,
+          workspacePath: s.workspacePath,
+          workspaceName: s.workspaceName,
+        });
+      }
+    }
     return { success: true };
   } catch (e) {
-    return { success: false, error: String(e) };
+    // 回退到 JSON 文件
+    try {
+      const dir = join(SESSIONS_FILE, '..');
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      writeFileSync(SESSIONS_FILE, JSON.stringify(sessionsData, null, 2));
+      return { success: true };
+    } catch (e2) {
+      return { success: false, error: String(e2) };
+    }
   }
 }
 
@@ -531,6 +599,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     IPC.SESSION_DELETE,
     IPC.SESSION_RENAME,
     IPC.SESSION_SET_WORKSPACE,
+    IPC.SESSION_FORK,
+    IPC.SESSION_ARCHIVE,
+    IPC.SESSION_SEARCH,
     IPC.FILE_DIALOG,
     IPC.FILE_ATTACHMENTS_PICK,
     IPC.FILE_LIST,
@@ -572,6 +643,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     IPC.SUPERVISOR_GET_VIOLATIONS,
     IPC.SUPERVISOR_SET_ENABLED,
     IPC.CONSOLE_GET_LOGS,
+    IPC.TASK_LIST,
+    IPC.TASK_CREATE,
+    IPC.TASK_UPDATE,
   ].forEach((channel) => ipcMain.removeHandler(channel));
 
   [IPC.WINDOW_MINIMIZE, IPC.WINDOW_MAXIMIZE, IPC.WINDOW_CLOSE, IPC.AGENT_STOP].forEach((channel) => {
@@ -628,25 +702,24 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle(IPC.SESSION_LIST, () => sessions);
   ipcMain.handle(IPC.SESSION_CREATE, (_, name?: string, workspacePath?: string) => {
+    ensureDbInitialized();
     const ws = workspacePath ? resolve(workspacePath) : '';
-    const session: Session = {
-      id: generateId(),
-      name: name || `对话 ${sessions.length + 1}`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      messageCount: 0,
+    const sessionData = sessionRepo.createSession({
+      title: name || `对话 ${sessions.length + 1}`,
       workspacePath: ws,
       workspaceName: ws ? basename(ws) : '',
-    };
+    });
+    const session = rowToSession(sessionData);
     sessions.push(session);
     activeSessionId = session.id;
-    saveSessionsToDisk(sessions);
     sendLog('info', `Session created: ${session.name} (${session.id})`, 'Session');
     return session;
   });
   ipcMain.handle(IPC.SESSION_SWITCH, (_, id: string) => {
-    const session = sessions.find((s) => s.id === id);
-    if (session) {
+    ensureDbInitialized();
+    const row = sessionRepo.getSession(id);
+    if (row) {
+      const session = rowToSession(row);
       const oldWorkspace = getCurrentWorkspace();
       activeSessionId = id;
       const newWorkspace = getCurrentWorkspace();
@@ -663,31 +736,34 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
   ipcMain.handle(IPC.SESSION_DELETE, (_, id: string) => {
     if (id === 'default') return getActiveSession();
-    const idx = sessions.findIndex((s) => s.id === id);
-    if (idx >= 0) {
-      sessions.splice(idx, 1);
-      if (sessions.length === 0) sessions = [createDefaultSession()];
-      if (activeSessionId === id) activeSessionId = sessions[0].id;
-      saveSessionsToDisk(sessions);
-      sendLog('info', `Session deleted: ${id}`, 'Session');
-    }
+    ensureDbInitialized();
+    sessionRepo.deleteSession(id);
+    sessions = sessions.filter(s => s.id !== id);
+    if (sessions.length === 0) sessions = [createDefaultSession()];
+    if (activeSessionId === id) activeSessionId = sessions[0].id;
+    sendLog('info', `Session deleted: ${id}`, 'Session');
   });
   ipcMain.handle(IPC.SESSION_RENAME, (_, id: string, name: string) => {
-    const session = sessions.find((s) => s.id === id);
+    ensureDbInitialized();
+    sessionRepo.updateSession(id, { title: name });
+    const session = sessions.find(s => s.id === id);
     if (session) {
       session.name = name;
       session.updatedAt = new Date().toISOString();
-      saveSessionsToDisk(sessions);
     }
   });
   ipcMain.handle(IPC.SESSION_SET_WORKSPACE, (_, id: string, path: string) => {
     const workspace = setWorkspace(path);
+    ensureDbInitialized();
+    sessionRepo.updateSession(id, {
+      workspacePath: workspace.path,
+      workspaceName: workspace.name,
+    });
     const session = sessions.find((s) => s.id === id);
     if (!session) throw new Error('Session not found');
     session.workspacePath = workspace.path;
     session.workspaceName = workspace.name;
     session.updatedAt = new Date().toISOString();
-    saveSessionsToDisk(sessions);
     return session;
   });
 
@@ -839,38 +915,93 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return { sessions };
   });
 
-  // Message persistence per session
+  // Message persistence per session (SQLite-backed with JSON fallback)
   const MESSAGES_DIR = join(app.getPath('userData'), 'messages');
 
-  // Sanitize session ID to prevent path traversal
   function sanitizeSessionId(sessionId: string): string {
-    // Only allow alphanumeric, hyphens, underscores, and dots
     const sanitized = sessionId.replace(/[^a-zA-Z0-9_.-]/g, '_');
-    // Remove any path separators
     return sanitized.replace(/\.\./g, '_').replace(/[/\\]/g, '_');
   }
 
   ipcMain.handle(IPC.MESSAGES_SAVE, async (_event, sessionId: string, messages: unknown[]) => {
     try {
-      if (!existsSync(MESSAGES_DIR)) mkdirSync(MESSAGES_DIR, { recursive: true });
-      const safeId = sanitizeSessionId(sessionId);
-      const filePath = join(MESSAGES_DIR, `${safeId}.json`);
-      writeFileSync(filePath, JSON.stringify(messages, null, 2));
+      ensureDbInitialized();
+      // 支持两种格式：直接数组，或 { messages, usage } 包装
+      let msgArray: Array<{ id?: string; role: string; content: string; timestamp: number }> = [];
+      if (Array.isArray(messages)) {
+        msgArray = messages as typeof msgArray;
+      } else if (messages && typeof messages === 'object' && 'messages' in (messages as Record<string, unknown>)) {
+        msgArray = (messages as { messages: typeof msgArray }).messages;
+      }
+      messageRepo.saveMessages(sessionId, msgArray.map(m => ({
+        id: m.id,
+        role: m.role,
+        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+        timestamp: m.timestamp,
+      })));
       return { success: true };
-    } catch (e) { return { success: false, error: String(e) }; }
+    } catch (e) {
+      // 回退到 JSON 文件
+      try {
+        if (!existsSync(MESSAGES_DIR)) mkdirSync(MESSAGES_DIR, { recursive: true });
+        const safeId = sanitizeSessionId(sessionId);
+        const filePath = join(MESSAGES_DIR, `${safeId}.json`);
+        writeFileSync(filePath, JSON.stringify(messages, null, 2));
+        return { success: true };
+      } catch (e2) { return { success: false, error: String(e2) }; }
+    }
   });
 
   ipcMain.handle(IPC.MESSAGES_LOAD, async (_event, sessionId: string) => {
     try {
-      const safeId = sanitizeSessionId(sessionId);
-      const filePath = join(MESSAGES_DIR, `${safeId}.json`);
-      if (!existsSync(filePath)) return { messages: [] };
-      const data = readFileSync(filePath, 'utf-8');
-      return { messages: JSON.parse(data) };
+      ensureDbInitialized();
+      const rows = messageRepo.listMessages(sessionId);
+      return { messages: rows.map(r => ({
+        id: r.id,
+        role: r.role,
+        content: r.content,
+        timestamp: r.timestamp,
+      })) };
     } catch (err) {
-      console.warn('[MESSAGES_LOAD] Failed to load messages:', err);
-      return { messages: [] };
+      // 回退到 JSON 文件
+      try {
+        const safeId = sanitizeSessionId(sessionId);
+        const filePath = join(MESSAGES_DIR, `${safeId}.json`);
+        if (!existsSync(filePath)) return { messages: [] };
+        const data = readFileSync(filePath, 'utf-8');
+        return { messages: JSON.parse(data) };
+      } catch {
+        return { messages: [] };
+      }
     }
+  });
+
+  // === 新增：分叉、归档、搜索会话 ===
+  ipcMain.handle(IPC.SESSION_FORK, (_, id: string, title: string) => {
+    ensureDbInitialized();
+    const row = sessionRepo.forkSession(id, title);
+    if (!row) return null;
+    const session = rowToSession(row);
+    sessions.push(session);
+    sendLog('info', `Session forked: ${title} from ${id}`, 'Session');
+    return session;
+  });
+
+  ipcMain.handle(IPC.SESSION_ARCHIVE, (_, id: string) => {
+    ensureDbInitialized();
+    const row = sessionRepo.archiveSession(id);
+    if (!row) return null;
+    const session = rowToSession(row);
+    const idx = sessions.findIndex(s => s.id === id);
+    if (idx >= 0) sessions[idx] = session;
+    sendLog('info', `Session archived: ${id}`, 'Session');
+    return session;
+  });
+
+  ipcMain.handle(IPC.SESSION_SEARCH, (_, query: string) => {
+    ensureDbInitialized();
+    const rows = sessionRepo.searchSessions(query);
+    return rows.map(rowToSession);
   });
 
   ipcMain.handle(IPC.GIT_INFO, async () => {
@@ -1377,6 +1508,83 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // === Console Log Buffer ===
   ipcMain.handle(IPC.CONSOLE_GET_LOGS, () => logBuffer);
+
+  // === Task Management ===
+  ipcMain.handle(IPC.TASK_LIST, (_event, sessionId?: string, statusFilter?: string) => {
+    try {
+      const agent = agentService.getAgent();
+      const taskRegistry = (agent as unknown as { getTaskRegistry?: () => unknown })?.getTaskRegistry?.();
+      if (!taskRegistry) return { tasks: [], error: 'Task registry not initialized' };
+
+      const sid = sessionId || (agent as unknown as { getSessionId?: () => string })?.getSessionId?.() || 'default';
+      const filter = statusFilter ? { status: statusFilter } : undefined;
+      const tasks = (taskRegistry as { list: (sid: string, filter?: { status: string }) => unknown[] }).list(sid, filter);
+      return { tasks };
+    } catch (err) {
+      console.warn('[TASK_LIST] Failed:', err);
+      return { tasks: [], error: String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC.TASK_CREATE, (_event, summary: string, parentId?: string, sessionId?: string) => {
+    try {
+      const agent = agentService.getAgent();
+      const taskRegistry = (agent as unknown as { getTaskRegistry?: () => unknown })?.getTaskRegistry?.();
+      if (!taskRegistry) return { success: false, error: 'Task registry not initialized' };
+
+      const sid = sessionId || (agent as unknown as { getSessionId?: () => string })?.getSessionId?.() || 'default';
+      const task = (taskRegistry as { create: (sid: string, summary: string, parentId?: string) => unknown }).create(sid, summary, parentId);
+      return { success: true, task };
+    } catch (err) {
+      console.warn('[TASK_CREATE] Failed:', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC.TASK_UPDATE, (_event, taskId: string, updates: Record<string, unknown>, sessionId?: string) => {
+    try {
+      const agent = agentService.getAgent();
+      const taskRegistry = (agent as unknown as { getTaskRegistry?: () => unknown })?.getTaskRegistry?.();
+      if (!taskRegistry) return { success: false, error: 'Task registry not initialized' };
+
+      const sid = sessionId || (agent as unknown as { getSessionId?: () => string })?.getSessionId?.() || 'default';
+      const registry = taskRegistry as {
+        update: (sid: string, taskId: string, updates: Record<string, unknown>) => unknown;
+        start: (sid: string, taskId: string) => unknown;
+        block: (sid: string, taskId: string) => unknown;
+        unblock: (sid: string, taskId: string) => unknown;
+        done: (sid: string, taskId: string) => unknown;
+        abandon: (sid: string, taskId: string) => unknown;
+        rename: (sid: string, taskId: string, newSummary: string) => unknown;
+      };
+
+      // Handle status transitions via dedicated methods
+      if (updates.status) {
+        let task: unknown;
+        switch (updates.status) {
+          case 'in_progress': task = registry.start(sid, taskId); break;
+          case 'blocked': task = registry.block(sid, taskId); break;
+          case 'done': task = registry.done(sid, taskId); break;
+          case 'abandoned': task = registry.abandon(sid, taskId); break;
+          default: task = registry.update(sid, taskId, updates);
+        }
+        return { success: true, task };
+      }
+
+      // Handle rename
+      if (updates.summary) {
+        const task = registry.rename(sid, taskId, updates.summary as string);
+        return { success: true, task };
+      }
+
+      // Generic update
+      const task = registry.update(sid, taskId, updates);
+      return { success: true, task };
+    } catch (err) {
+      console.warn('[TASK_UPDATE] Failed:', err);
+      return { success: false, error: String(err) };
+    }
+  });
 }
 
 /**

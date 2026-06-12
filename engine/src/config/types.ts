@@ -16,6 +16,13 @@ export interface SubAgentConfig {
   maxConcurrent: number;
 }
 
+export interface ToolOutputConfig {
+  /** Maximum allowed character length for tool output (default 50000) */
+  maxLength?: number;
+  /** Whether auto-truncation is enabled (default true) */
+  autoTruncate?: boolean;
+}
+
 export type ToolPreset = 'plan' | 'act';
 
 export interface PathPermissionRule {
@@ -48,4 +55,5 @@ export interface MimoConfig {
   stream: boolean;
   verbose: boolean;
   subAgents: SubAgentConfig;
+  toolOutput?: ToolOutputConfig;
 }

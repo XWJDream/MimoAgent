@@ -23,6 +23,9 @@ export const IPC = {
   SESSION_DELETE: 'session:delete',
   SESSION_RENAME: 'session:rename',
   SESSION_SET_WORKSPACE: 'session:set-workspace',
+  SESSION_FORK: 'session:fork',
+  SESSION_ARCHIVE: 'session:archive',
+  SESSION_SEARCH: 'session:search',
   SESSIONS_SAVE: 'sessions:save',
   SESSIONS_LOAD: 'sessions:load',
   MESSAGES_SAVE: 'messages:save',
@@ -83,4 +86,8 @@ export const IPC = {
 
   CONSOLE_GET_LOGS: 'console:get-logs',
   LOG_ENTRY: 'log:entry',
+
+  TASK_LIST: 'task:list',
+  TASK_CREATE: 'task:create',
+  TASK_UPDATE: 'task:update',
 } as const;

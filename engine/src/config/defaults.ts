@@ -30,5 +30,9 @@ export function getDefaultConfig(): MimoConfig {
       enabled: true,
       maxConcurrent: 3,
     },
+    toolOutput: {
+      maxLength: 50_000,
+      autoTruncate: true,
+    },
   };
 }

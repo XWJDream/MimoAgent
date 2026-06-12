@@ -6,7 +6,7 @@ import { EditFileTool } from './edit-file.js';
 import { GrepTool } from './grep.js';
 import { GlobTool } from './glob.js';
 import { ShellTool } from './shell.js';
-import { TaskCreateTool, TaskUpdateTool, TaskListTool } from './task.js';
+import { TaskCreateTool, TaskUpdateTool, TaskListTool, TaskTool } from './task.js';
 import { GitStatusTool } from './git-status.js';
 import { GitCommitTool } from './git-commit.js';
 import { WebFetchTool } from './web-fetch.js';
@@ -14,6 +14,7 @@ import { GitCheckpointTool } from './git-checkpoint.js';
 import { SubAgentsRunTool } from './sub-agents-run.js';
 import { MemorySearchTool } from './memory-search.js';
 import { InMemoryTaskStore } from './task.js';
+import type { TaskRegistry } from '../../task/registry.js';
 import type { MimoConfig, SubAgentConfig } from '../../config/types.js';
 import type { PermissionChecker } from '../../permissions/checker.js';
 
@@ -22,6 +23,8 @@ interface RegisterBuiltinToolsOptions {
   subAgents?: SubAgentConfig;
   getPermissionChecker?: () => PermissionChecker | null;
   memorySearchTool?: MemorySearchTool;
+  taskRegistry?: TaskRegistry;
+  sessionId?: string;
 }
 
 export function registerBuiltinTools(
@@ -37,14 +40,23 @@ export function registerBuiltinTools(
     new GrepTool(),
     new GlobTool(),
     new ShellTool(),
-    new TaskCreateTool(taskStore),
-    new TaskUpdateTool(taskStore),
-    new TaskListTool(taskStore),
     new GitStatusTool(),
     new GitCommitTool(),
     new WebFetchTool(),
     new GitCheckpointTool(),
   ];
+
+  // 注册新的统一 TaskTool（如果提供了 TaskRegistry）
+  if (options.taskRegistry && options.sessionId) {
+    allTools.push(new TaskTool(options.taskRegistry, options.sessionId));
+  } else {
+    // 向后兼容：使用旧的内存任务工具
+    allTools.push(
+      new TaskCreateTool(taskStore),
+      new TaskUpdateTool(taskStore),
+      new TaskListTool(taskStore),
+    );
+  }
 
   if (preset === 'act' && options.mimoConfig && options.subAgents?.enabled) {
     allTools.push(new SubAgentsRunTool({
@@ -61,9 +73,11 @@ export function registerBuiltinTools(
 
   if (preset === 'plan') {
     // Read-only tools only (web_fetch is read-only, included in plan)
-    const planTools = allTools.filter(t =>
-      ['read_file', 'grep', 'glob', 'git_status', 'git_checkpoint', 'task_create', 'task_update', 'task_list', 'web_fetch'].includes(t.name)
-    );
+    const planToolNames = ['read_file', 'grep', 'glob', 'git_status', 'git_checkpoint', 'task', 'web_fetch'];
+    // Also include legacy task tool names for backward compatibility
+    const legacyPlanToolNames = ['task_create', 'task_update', 'task_list'];
+    const allPlanNames = [...planToolNames, ...legacyPlanToolNames];
+    const planTools = allTools.filter(t => allPlanNames.includes(t.name));
     registry.registerAll(planTools);
   } else {
     registry.registerAll(allTools);
@@ -76,7 +90,7 @@ export { EditFileTool } from './edit-file.js';
 export { GrepTool } from './grep.js';
 export { GlobTool } from './glob.js';
 export { ShellTool } from './shell.js';
-export { TaskCreateTool, TaskUpdateTool, TaskListTool } from './task.js';
+export { TaskCreateTool, TaskUpdateTool, TaskListTool, TaskTool } from './task.js';
 export { GitStatusTool } from './git-status.js';
 export { GitCommitTool } from './git-commit.js';
 export { WebFetchTool } from './web-fetch.js';

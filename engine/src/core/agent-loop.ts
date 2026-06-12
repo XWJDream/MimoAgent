@@ -9,6 +9,8 @@ import { createValidator, type ValidationOptions, type ValidationResult } from '
 import { estimateMessageTokens, estimateTokens } from '../llm/tokenizer.js';
 import { pressureLevel as calcPressure, type OverflowInput } from '../context/overflow.js';
 import { microcompact } from '../context/compaction.js';
+import type { TaskRegistry } from '../task/registry.js';
+import { decideGate, type GateDecision } from '../task/gate.js';
 
 export interface AgentHooks {
   beforeTool?: (name: string, args: Record<string, unknown>) => Promise<{ skip?: boolean; modifiedArgs?: Record<string, unknown> } | void>;
@@ -23,7 +25,8 @@ export type LoopEvent =
   | { type: 'reflection'; prompt: string }
   | { type: 'done'; usage?: { prompt: number; completion: number; total: number } }
   | { type: 'error'; message: string }
-  | { type: 'context_pressure'; level: 0 | 1 | 2 | 3; usable: number; current: number };
+  | { type: 'context_pressure'; level: 0 | 1 | 2 | 3; usable: number; current: number }
+  | { type: 'gate'; decision: GateDecision };
 
 export interface AgentLoopOptions {
   maxTurns: number;
@@ -39,6 +42,10 @@ export interface AgentLoopOptions {
   contextWindow?: number;
   /** Model max output tokens for pressure detection */
   maxOutputTokens?: number;
+  /** Task registry for gate mechanism */
+  taskRegistry?: TaskRegistry;
+  /** Session ID for gate mechanism */
+  sessionId?: string;
 }
 
 export async function* agentLoop(
@@ -54,6 +61,7 @@ export async function* agentLoop(
   const recentToolCalls: string[] = []; // For loop detection
   const validator = createValidator(options.validation);
   const toolResults: Array<{ tool: string; result: ToolResult }> = [];
+  let gateReactCount = 0; // Gate re-entry counter
 
   while (turnCount < MAX_TURNS) {
     if (options.abortSignal?.aborted) {
@@ -176,6 +184,25 @@ export async function* agentLoop(
     }
 
     if (!toolCalls || toolCalls.length === 0) {
+      // Gate mechanism: check if there are incomplete tasks
+      if (options.taskRegistry && options.sessionId) {
+        const gateDecision = decideGate(options.taskRegistry, options.sessionId, gateReactCount);
+        yield { type: 'gate', decision: gateDecision };
+
+        if (gateDecision.action === 'continue') {
+          gateReactCount++;
+          // Inject a system message to guide the agent to continue
+          const incompleteSummary = gateDecision.incompleteTasks
+            ?.map(t => `  - ${t.id}: ${t.summary} (${t.status})`)
+            .join('\n') || '';
+          messages.push({
+            role: 'system',
+            content: `任务门检查: ${gateDecision.reason}\n\n未完成任务:\n${incompleteSummary}\n\n请继续处理未完成的任务。`,
+          });
+          continue; // Continue the loop
+        }
+      }
+
       yield { type: 'done' };
       return;
     }

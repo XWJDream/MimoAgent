@@ -25,6 +25,9 @@ const IPC = {
   SESSION_DELETE: 'session:delete',
   SESSION_RENAME: 'session:rename',
   SESSION_SET_WORKSPACE: 'session:set-workspace',
+  SESSION_FORK: 'session:fork',
+  SESSION_ARCHIVE: 'session:archive',
+  SESSION_SEARCH: 'session:search',
   SESSIONS_SAVE: 'sessions:save',
   SESSIONS_LOAD: 'sessions:load',
   MESSAGES_SAVE: 'messages:save',
@@ -71,6 +74,10 @@ const IPC = {
   SUPERVISOR_SET_ENABLED: 'supervisor:set-enabled',
 
   CONSOLE_GET_LOGS: 'console:get-logs',
+
+  TASK_LIST: 'task:list',
+  TASK_CREATE: 'task:create',
+  TASK_UPDATE: 'task:update',
 } as const;
 
 const api = {
@@ -89,8 +96,8 @@ const api = {
       ipcRenderer.on(IPC.AGENT_TOOL_START, handler);
       return () => ipcRenderer.removeListener(IPC.AGENT_TOOL_START, handler);
     },
-    onToolResult: (cb: (result: { name: string; output: string; isError: boolean }) => void) => {
-      const handler = (_: unknown, result: { name: string; output: string; isError: boolean }) => cb(result);
+    onToolResult: (cb: (result: { name: string; output: string; isError: boolean; truncated?: boolean }) => void) => {
+      const handler = (_: unknown, result: { name: string; output: string; isError: boolean; truncated?: boolean }) => cb(result);
       ipcRenderer.on(IPC.AGENT_TOOL_RESULT, handler);
       return () => ipcRenderer.removeListener(IPC.AGENT_TOOL_RESULT, handler);
     },
@@ -137,6 +144,9 @@ const api = {
     delete: (id: string) => ipcRenderer.invoke(IPC.SESSION_DELETE, id),
     rename: (id: string, name: string) => ipcRenderer.invoke(IPC.SESSION_RENAME, id, name),
     setWorkspace: (id: string, path: string) => ipcRenderer.invoke(IPC.SESSION_SET_WORKSPACE, id, path),
+    fork: (id: string, title: string) => ipcRenderer.invoke(IPC.SESSION_FORK, id, title),
+    archive: (id: string) => ipcRenderer.invoke(IPC.SESSION_ARCHIVE, id),
+    search: (query: string) => ipcRenderer.invoke(IPC.SESSION_SEARCH, query),
   },
 
   // Files
@@ -252,6 +262,13 @@ const api = {
   // Console
   console: {
     getLogs: () => ipcRenderer.invoke(IPC.CONSOLE_GET_LOGS),
+  },
+
+  // Task Management
+  tasks: {
+    list: (sessionId?: string, statusFilter?: string) => ipcRenderer.invoke(IPC.TASK_LIST, sessionId, statusFilter),
+    create: (summary: string, parentId?: string, sessionId?: string) => ipcRenderer.invoke(IPC.TASK_CREATE, summary, parentId, sessionId),
+    update: (taskId: string, updates: Record<string, unknown>, sessionId?: string) => ipcRenderer.invoke(IPC.TASK_UPDATE, taskId, updates, sessionId),
   },
 
   // Generic event listeners

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Wrench, Activity, Layers, Zap, Users } from 'lucide-react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Wrench, Activity, Layers, Zap, Users, CheckSquare, ChevronRight, ChevronDown } from 'lucide-react';
 import { ToolCard } from './ToolCard';
 import { useChatStore } from '../../stores/chatStore';
 import { useConfigStore } from '../../stores/configStore';
@@ -270,6 +270,9 @@ export function ToolPanel({ forceOpen }: ToolPanelProps) {
       {/* Agent Collaboration - bound to current session */}
       <AgentCollabInspector />
 
+      {/* Task System */}
+      <TaskInspector />
+
       {/* Execution Log */}
       {toolCalls.length > 0 && (
         <div className="inspector-card">
@@ -356,6 +359,155 @@ function AgentCollabInspector() {
               )}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Task status color config
+const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  open: { label: 'task.open', color: 'var(--text-muted)', bg: 'rgba(156,163,175,0.12)' },
+  in_progress: { label: 'task.in_progress', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
+  blocked: { label: 'task.blocked', color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
+  done: { label: 'task.done', color: '#22c55e', bg: 'rgba(34,197,94,0.12)' },
+  abandoned: { label: 'task.abandoned', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
+};
+
+interface TaskItem {
+  id: string;
+  sessionId: string;
+  parentId?: string;
+  status: string;
+  summary: string;
+  owner?: string;
+  createdAt: number;
+  updatedAt: number;
+  endedAt?: number;
+}
+
+/** Task inspector panel in the sidebar */
+function TaskInspector() {
+  const t = useT();
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const refreshTasks = useCallback(async () => {
+    try {
+      const api = (window as unknown as { api?: { tasks?: { list: (sessionId?: string, statusFilter?: string) => Promise<{ tasks: TaskItem[] }> } } }).api;
+      const result = await api?.tasks?.list?.();
+      if (result?.tasks) {
+        setTasks(result.tasks);
+      }
+    } catch {
+      // Silently fail - task registry may not be initialized
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshTasks();
+    // Refresh every 5 seconds while streaming
+    const interval = setInterval(refreshTasks, 5000);
+    return () => clearInterval(interval);
+  }, [refreshTasks]);
+
+  // Build tree structure
+  const rootTasks = tasks.filter(t => !t.parentId);
+  const childMap = new Map<string, TaskItem[]>();
+  for (const task of tasks) {
+    if (task.parentId) {
+      const children = childMap.get(task.parentId) || [];
+      children.push(task);
+      childMap.set(task.parentId, children);
+    }
+  }
+
+  const incompleteCount = tasks.filter(t => t.status === 'open' || t.status === 'in_progress' || t.status === 'blocked').length;
+
+  const toggleExpand = (taskId: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  };
+
+  const renderTask = (task: TaskItem, depth: number = 0) => {
+    const config = TASK_STATUS_CONFIG[task.status] || TASK_STATUS_CONFIG.open;
+    const children = childMap.get(task.id) || [];
+    const hasChildren = children.length > 0;
+    const isExpanded = expanded.has(task.id);
+
+    return (
+      <div key={task.id}>
+        <div
+          style={{
+            padding: '4px 8px',
+            borderRadius: 4,
+            background: 'var(--bg-hover, rgba(255,255,255,0.03))',
+            fontSize: 11,
+            borderLeft: `2px solid ${config.color}`,
+            marginLeft: depth * 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            cursor: hasChildren ? 'pointer' : 'default',
+          }}
+          onClick={() => hasChildren && toggleExpand(task.id)}
+        >
+          {hasChildren ? (
+            isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />
+          ) : (
+            <span style={{ width: 10 }} />
+          )}
+          <span style={{
+            fontSize: 9,
+            fontWeight: 600,
+            color: config.color,
+            background: config.bg,
+            padding: '1px 4px',
+            borderRadius: 3,
+          }}>
+            {t(config.label)}
+          </span>
+          <span style={{
+            fontWeight: 500,
+            color: 'var(--text-primary)',
+            flex: 1,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+            {task.id}: {task.summary}
+          </span>
+        </div>
+        {hasChildren && isExpanded && children.map(child => renderTask(child, depth + 1))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="inspector-card">
+      <div className="inspector-card-title">
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CheckSquare size={12} strokeWidth={1.7} /> {t('task.title')}
+          {tasks.length > 0 && (
+            <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>
+              {incompleteCount > 0 && <span style={{ color: '#3b82f6' }}>{t('task.incomplete', { count: incompleteCount })}</span>}
+              {incompleteCount > 0 && tasks.length > 0 && ' · '}
+              <span>{t('task.count', { count: tasks.length })}</span>
+            </span>
+          )}
+        </span>
+      </div>
+      {tasks.length === 0 ? (
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', padding: '4px 0' }}>
+          {t('task.empty')}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 300, overflowY: 'auto' }}>
+          {rootTasks.map(task => renderTask(task))}
         </div>
       )}
     </div>

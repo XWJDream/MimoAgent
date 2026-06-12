@@ -16,7 +16,7 @@ interface SidebarProps {
 export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentView }: SidebarProps) {
   const t = useT();
   const { toast } = useToast();
-  const { sessions, activeSessionId, setSessions, setActiveSession, addSession, removeSession, renameSession, setSessionWorkspace } = useSessionStore();
+  const { sessions, activeSessionId, setSessions, setActiveSession, addSession, removeSession, renameSession, setSessionWorkspace, searchSessions, clearSearch, searchResults, searching } = useSessionStore();
   const switchSession = useChatStore((s) => s.switchSession);
   const clearMessages = useChatStore((s) => s.clearMessages);
   const model = useConfigStore((s) => s.config.model);
@@ -39,12 +39,30 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
   const editInputRef = useRef<HTMLInputElement>(null);
 
   const filteredSessions = searchQuery.trim()
-    ? sessions.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    ? searchResults.length > 0 || searching
+      ? searchResults
+      : sessions.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
     : sessions;
 
   useEffect(() => {
     if (searchOpen) searchInputRef.current?.focus();
   }, [searchOpen]);
+
+  // 服务端搜索：防抖触发
+  useEffect(() => {
+    if (!searchOpen) {
+      clearSearch();
+      return;
+    }
+    if (!searchQuery.trim()) {
+      clearSearch();
+      return;
+    }
+    const timer = setTimeout(() => {
+      searchSessions(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, searchOpen, searchSessions, clearSearch]);
 
   useEffect(() => {
     if (editingSessionId && editInputRef.current) {
@@ -165,7 +183,10 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
             type="button"
             onClick={() => {
               setSearchOpen(prev => !prev);
-              if (searchOpen) setSearchQuery('');
+              if (searchOpen) {
+                setSearchQuery('');
+                clearSearch();
+              }
             }}
           >
             <Search size={16} strokeWidth={1.7} />
@@ -211,6 +232,7 @@ export function Sidebar({ onOpenSettings, onOpenWorkspace, onOpenView, currentVi
                   if (e.key === 'Escape') {
                     setSearchOpen(false);
                     setSearchQuery('');
+                    clearSearch();
                   }
                 }}
                 placeholder={t('sidebar.searchPlaceholder')}

@@ -35,11 +35,27 @@ interface AgentInstance {
   setConversation(messages: unknown[]): void;
   getMemory(): ProjectMemory;
   getMemoryService(): MemoryServiceInstance | null;
+  getTaskRegistry(): TaskRegistryInstance | null;
+  setSessionId(sessionId: string): void;
+  getSessionId(): string;
 }
 
 interface MemoryServiceInstance {
   search(query: string, options?: { limit?: number; scope?: string }): unknown[];
   reconcile(): { added: number; updated: number; removed: number };
+}
+
+interface TaskRegistryInstance {
+  create(sessionId: string, summary: string, parentId?: string): unknown;
+  get(sessionId: string, taskId: string): unknown;
+  list(sessionId: string, filter?: { status?: string }): unknown[];
+  update(sessionId: string, taskId: string, updates: Record<string, unknown>): unknown;
+  start(sessionId: string, taskId: string): unknown;
+  block(sessionId: string, taskId: string): unknown;
+  unblock(sessionId: string, taskId: string): unknown;
+  done(sessionId: string, taskId: string): unknown;
+  abandon(sessionId: string, taskId: string): unknown;
+  rename(sessionId: string, taskId: string, newSummary: string): unknown;
 }
 
 interface ProjectMemory {
@@ -131,6 +147,10 @@ export function buildAgentConfig(config: AgentRuntimeConfig) {
     subAgents: {
       enabled: config.toolPreset === 'act',
       maxConcurrent: 3,
+    },
+    toolOutput: {
+      maxLength: 50_000,
+      autoTruncate: true,
     },
   };
 }
@@ -302,11 +322,12 @@ export class AgentService {
             }
           }
         },
-        onToolResult: (name: string, result: { output: string; isError: boolean }) => {
+        onToolResult: (name: string, result: { output: string; isError: boolean; metadata?: Record<string, unknown> }) => {
           window.webContents.send(IPC.AGENT_TOOL_RESULT, {
             name,
             output: result.output,
             isError: result.isError,
+            truncated: result.metadata?.truncated === true,
           });
 
           // Supervisor: check tool output for code quality violations
