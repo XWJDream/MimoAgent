@@ -55,6 +55,10 @@ const IPC = {
   MCP_SERVERS_ADD: 'mcp:servers:add',
   MCP_SERVERS_REMOVE: 'mcp:servers:remove',
   MCP_SERVERS_TOGGLE: 'mcp:servers:toggle',
+  MCP_CONNECT: 'mcp:connect',
+  MCP_DISCONNECT: 'mcp:disconnect',
+  MCP_LIST_TOOLS: 'mcp:list-tools',
+  MCP_STATUS: 'mcp:status',
   AUTOMATION_RULES_GET: 'automation:rules:get',
   AUTOMATION_RULES_ADD: 'automation:rules:add',
   AUTOMATION_RULES_REMOVE: 'automation:rules:remove',
@@ -79,6 +83,11 @@ const IPC = {
   TASK_LIST: 'task:list',
   TASK_CREATE: 'task:create',
   TASK_UPDATE: 'task:update',
+
+  PLUGIN_LIST: 'plugin:list',
+  PLUGIN_ENABLE: 'plugin:enable',
+  PLUGIN_DISABLE: 'plugin:disable',
+  PLUGIN_RELOAD: 'plugin:reload',
 
   TOOL_READ_OUTPUT: 'tool:read-output',
 } as const;
@@ -214,6 +223,10 @@ const api = {
       ipcRenderer.invoke(IPC.MCP_SERVERS_ADD, server),
     removeServer: (id: string) => ipcRenderer.invoke(IPC.MCP_SERVERS_REMOVE, id),
     toggleServer: (id: string, enabled: boolean) => ipcRenderer.invoke(IPC.MCP_SERVERS_TOGGLE, id, enabled),
+    connect: (name: string) => ipcRenderer.invoke(IPC.MCP_CONNECT, name),
+    disconnect: (name: string) => ipcRenderer.invoke(IPC.MCP_DISCONNECT, name),
+    listTools: () => ipcRenderer.invoke(IPC.MCP_LIST_TOOLS),
+    getStatus: () => ipcRenderer.invoke(IPC.MCP_STATUS),
   },
 
   // Automation
@@ -277,6 +290,14 @@ const api = {
     list: (sessionId?: string, statusFilter?: string) => ipcRenderer.invoke(IPC.TASK_LIST, sessionId, statusFilter),
     create: (summary: string, parentId?: string, sessionId?: string) => ipcRenderer.invoke(IPC.TASK_CREATE, summary, parentId, sessionId),
     update: (taskId: string, updates: Record<string, unknown>, sessionId?: string) => ipcRenderer.invoke(IPC.TASK_UPDATE, taskId, updates, sessionId),
+  },
+
+  // Plugin Management
+  plugins: {
+    list: () => ipcRenderer.invoke(IPC.PLUGIN_LIST),
+    enable: (name: string) => ipcRenderer.invoke(IPC.PLUGIN_ENABLE, name),
+    disable: (name: string) => ipcRenderer.invoke(IPC.PLUGIN_DISABLE, name),
+    reload: () => ipcRenderer.invoke(IPC.PLUGIN_RELOAD),
   },
 
   // Tool output reading (for truncated outputs saved to disk)

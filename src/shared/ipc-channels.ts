@@ -60,6 +60,10 @@ export const IPC = {
   MCP_SERVERS_ADD: 'mcp:servers:add',
   MCP_SERVERS_REMOVE: 'mcp:servers:remove',
   MCP_SERVERS_TOGGLE: 'mcp:servers:toggle',
+  MCP_CONNECT: 'mcp:connect',
+  MCP_DISCONNECT: 'mcp:disconnect',
+  MCP_LIST_TOOLS: 'mcp:list-tools',
+  MCP_STATUS: 'mcp:status',
 
   AUTOMATION_RULES_GET: 'automation:rules:get',
   AUTOMATION_RULES_ADD: 'automation:rules:add',
@@ -91,6 +95,11 @@ export const IPC = {
   TASK_LIST: 'task:list',
   TASK_CREATE: 'task:create',
   TASK_UPDATE: 'task:update',
+
+  PLUGIN_LIST: 'plugin:list',
+  PLUGIN_ENABLE: 'plugin:enable',
+  PLUGIN_DISABLE: 'plugin:disable',
+  PLUGIN_RELOAD: 'plugin:reload',
 
   TOOL_READ_OUTPUT: 'tool:read-output',
 } as const;

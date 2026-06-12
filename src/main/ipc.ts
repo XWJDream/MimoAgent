@@ -625,6 +625,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     IPC.MCP_SERVERS_ADD,
     IPC.MCP_SERVERS_REMOVE,
     IPC.MCP_SERVERS_TOGGLE,
+    IPC.MCP_CONNECT,
+    IPC.MCP_DISCONNECT,
+    IPC.MCP_LIST_TOOLS,
+    IPC.MCP_STATUS,
     IPC.AUTOMATION_RULES_GET,
     IPC.AUTOMATION_RULES_ADD,
     IPC.AUTOMATION_RULES_REMOVE,
@@ -1131,6 +1135,59 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return { success: true };
   });
 
+  // MCP runtime connect/disconnect/tools
+  ipcMain.handle(IPC.MCP_CONNECT, async (_event, name: string) => {
+    try {
+      const agent = agentService.getAgent();
+      const mcpManager = (agent as unknown as { getMcpManager?: () => unknown })?.getMcpManager?.();
+      if (!mcpManager) return { success: false, error: 'MCP manager not initialized' };
+      const tools = await (mcpManager as { connect: (name: string) => Promise<unknown[]> }).connect(name);
+      sendLog('info', `MCP server connected: ${name} (${tools.length} tools)`, 'MCP');
+      return { success: true, tools };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      sendLog('error', `MCP connect failed: ${name} - ${message}`, 'MCP');
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle(IPC.MCP_DISCONNECT, async (_event, name: string) => {
+    try {
+      const agent = agentService.getAgent();
+      const mcpManager = (agent as unknown as { getMcpManager?: () => unknown })?.getMcpManager?.();
+      if (!mcpManager) return { success: false, error: 'MCP manager not initialized' };
+      await (mcpManager as { disconnect: (name: string) => Promise<void> }).disconnect(name);
+      sendLog('info', `MCP server disconnected: ${name}`, 'MCP');
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC.MCP_LIST_TOOLS, async () => {
+    try {
+      const agent = agentService.getAgent();
+      const mcpManager = (agent as unknown as { getMcpManager?: () => unknown })?.getMcpManager?.();
+      if (!mcpManager) return { tools: [] };
+      const tools = (mcpManager as { getAllTools: () => unknown[] }).getAllTools();
+      return { tools };
+    } catch (err) {
+      return { tools: [], error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC.MCP_STATUS, async () => {
+    try {
+      const agent = agentService.getAgent();
+      const mcpManager = (agent as unknown as { getMcpManager?: () => unknown })?.getMcpManager?.();
+      if (!mcpManager) return { servers: [] };
+      const servers = (mcpManager as { getServerStatus: () => unknown[] }).getServerStatus();
+      return { servers };
+    } catch (err) {
+      return { servers: [], error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
   // === Automation ===
   function loadAutomationRules(): AutomationRule[] {
     try {
@@ -1622,6 +1679,58 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       return { success: true, task };
     } catch (err) {
       console.warn('[TASK_UPDATE] Failed:', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // Plugin management handlers
+  ipcMain.handle(IPC.PLUGIN_LIST, () => {
+    try {
+      const agent = agentService.getAgent?.();
+      const pluginRegistry = agent?.getPluginRegistry?.();
+      if (!pluginRegistry) return { plugins: [] };
+      return { plugins: pluginRegistry.listPlugins() };
+    } catch (err) {
+      console.warn('[PLUGIN_LIST] Failed:', err);
+      return { plugins: [] };
+    }
+  });
+
+  ipcMain.handle(IPC.PLUGIN_ENABLE, (_event, name: string) => {
+    try {
+      const agent = agentService.getAgent?.();
+      const pluginRegistry = agent?.getPluginRegistry?.();
+      if (!pluginRegistry) return { success: false, error: 'Plugin registry not initialized' };
+      const result = pluginRegistry.setEnabled(name, true);
+      return { success: result };
+    } catch (err) {
+      console.warn('[PLUGIN_ENABLE] Failed:', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC.PLUGIN_DISABLE, (_event, name: string) => {
+    try {
+      const agent = agentService.getAgent?.();
+      const pluginRegistry = agent?.getPluginRegistry?.();
+      if (!pluginRegistry) return { success: false, error: 'Plugin registry not initialized' };
+      const result = pluginRegistry.setEnabled(name, false);
+      return { success: result };
+    } catch (err) {
+      console.warn('[PLUGIN_DISABLE] Failed:', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC.PLUGIN_RELOAD, async () => {
+    try {
+      const agent = agentService.getAgent?.();
+      const pluginRegistry = agent?.getPluginRegistry?.();
+      if (!pluginRegistry) return { success: false, error: 'Plugin registry not initialized' };
+      await pluginRegistry.reload();
+      return { success: true, plugins: pluginRegistry.listPlugins() };
+    } catch (err) {
+      console.warn('[PLUGIN_RELOAD] Failed:', err);
       return { success: false, error: String(err) };
     }
   });

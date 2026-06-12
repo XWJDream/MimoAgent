@@ -249,6 +249,16 @@ export default {
   'plugin.noMcpServersHint': '点击上方按钮添加服务器',
   'plugin.enable': '启用',
   'plugin.disable': '禁用',
+  'plugin.nativePlugins': '本地插件',
+  'plugin.noNativePlugins': '暂无本地插件',
+  'plugin.noNativePluginsHint': '将插件放入 ~/.mimo-agent/plugins/ 目录',
+  'plugin.pluginVersion': 'v{{version}}',
+  'plugin.pluginAuthor': 'by {{author}}',
+  'plugin.pluginHooks': '{{count}} 个钩子',
+  'plugin.reloadPlugins': '重新加载插件',
+  'plugin.reloadSuccess': '插件已重新加载',
+  'plugin.pluginEnabled': '插件已启用',
+  'plugin.pluginDisabled': '插件已禁用',
 
   // Automation
   'automation.title': '自动化规则',

@@ -25,12 +25,54 @@ export interface ToolOutputConfig {
 
 export type ToolPreset = 'plan' | 'act';
 
+export interface McpServerEntry {
+  url?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  enabled?: boolean;
+  timeout?: number;
+}
+
+export interface McpConfig {
+  servers?: Record<string, McpServerEntry>;
+}
+
 export interface PathPermissionRule {
   pattern: string;
   tools: string[];
   action: 'allow' | 'deny' | 'confirm';
   description?: string;
 }
+
+/** 模型信息 */
+export interface ModelInfo {
+  id: string;
+  name: string;
+  contextWindow: number;
+  maxOutputTokens: number;
+  supportsTools: boolean;
+  supportsStreaming: boolean;
+  costPer1kInput?: number;
+  costPer1kOutput?: number;
+}
+
+/** 单个 Provider 配置 */
+export interface ProviderConfig {
+  /** 当前使用的 Provider 名称（如 'mimo', 'openai', 'anthropic', 'openai-compatible'） */
+  name?: string;
+  /** 自定义模型列表 */
+  models?: ModelInfo[];
+  /** 默认模型 */
+  defaultModel?: string;
+}
+
+/** 多 Provider 配置（按名称索引） */
+export type ProvidersConfig = Record<string, {
+  apiKey?: string;
+  baseUrl?: string;
+  models?: ModelInfo[];
+}>;
 
 export interface MimoConfig {
   model: string;
@@ -56,4 +98,9 @@ export interface MimoConfig {
   verbose: boolean;
   subAgents: SubAgentConfig;
   toolOutput?: ToolOutputConfig;
+  mcp?: McpConfig;
+  /** 单 Provider 配置 */
+  provider?: ProviderConfig;
+  /** 多 Provider 配置（按名称索引） */
+  providers?: ProvidersConfig;
 }

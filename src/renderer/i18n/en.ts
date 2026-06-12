@@ -248,6 +248,16 @@ export default {
   'plugin.noMcpServersHint': 'Click the button above to add a server',
   'plugin.enable': 'Enable',
   'plugin.disable': 'Disable',
+  'plugin.nativePlugins': 'Native Plugins',
+  'plugin.noNativePlugins': 'No native plugins',
+  'plugin.noNativePluginsHint': 'Place plugins in ~/.mimo-agent/plugins/ directory',
+  'plugin.pluginVersion': 'v{{version}}',
+  'plugin.pluginAuthor': 'by {{author}}',
+  'plugin.pluginHooks': '{{count}} hooks',
+  'plugin.reloadPlugins': 'Reload Plugins',
+  'plugin.reloadSuccess': 'Plugins reloaded',
+  'plugin.pluginEnabled': 'Plugin enabled',
+  'plugin.pluginDisabled': 'Plugin disabled',
 
   // Automation
   'automation.title': 'Automation Rules',

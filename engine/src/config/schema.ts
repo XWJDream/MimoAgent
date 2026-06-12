@@ -18,6 +18,29 @@ const SubAgentConfigSchema = z.object({
   maxConcurrent: z.number().default(3),
 });
 
+const ModelInfoSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  contextWindow: z.number(),
+  maxOutputTokens: z.number(),
+  supportsTools: z.boolean(),
+  supportsStreaming: z.boolean(),
+  costPer1kInput: z.number().optional(),
+  costPer1kOutput: z.number().optional(),
+});
+
+const ProviderConfigSchema = z.object({
+  name: z.string().optional(),
+  models: z.array(ModelInfoSchema).optional(),
+  defaultModel: z.string().optional(),
+});
+
+const ProviderEntrySchema = z.object({
+  apiKey: z.string().optional(),
+  baseUrl: z.string().optional(),
+  models: z.array(ModelInfoSchema).optional(),
+});
+
 export const ConfigSchema = z.object({
   model: z.string().default('mimo-v2.5-pro'),
   apiBase: z.string().url().default('https://api.xiaomimimo.com/v1'),
@@ -38,6 +61,8 @@ export const ConfigSchema = z.object({
   stream: z.boolean().default(true),
   verbose: z.boolean().default(false),
   subAgents: SubAgentConfigSchema.default({}),
+  provider: ProviderConfigSchema.optional(),
+  providers: z.record(ProviderEntrySchema).optional(),
 });
 
 export type ValidatedConfig = z.infer<typeof ConfigSchema>;

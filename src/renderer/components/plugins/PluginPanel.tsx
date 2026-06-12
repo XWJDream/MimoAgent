@@ -1,8 +1,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { X, Plus, Trash2, Power, Server, Wrench, RefreshCw } from 'lucide-react';
+import { X, Plus, Trash2, Power, Server, Wrench, RefreshCw, Package } from 'lucide-react';
 import type { McpServerConfig, ToolInfo } from '../../../shared/types';
 import { useT } from '../../i18n';
 import { useToast } from '../common/Toast';
+
+interface NativePlugin {
+  name: string;
+  version: string;
+  description?: string;
+  author?: string;
+  enabled: boolean;
+  loadedAt: number;
+  hooks: string[];
+}
 
 interface PluginPanelProps {
   onClose: () => void;
@@ -13,6 +23,7 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
   const { toast } = useToast();
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [servers, setServers] = useState<McpServerConfig[]>([]);
+  const [nativePlugins, setNativePlugins] = useState<NativePlugin[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddServer, setShowAddServer] = useState(false);
   const [newServer, setNewServer] = useState({ name: '', command: '', args: '' });
@@ -21,16 +32,20 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [removingServerId, setRemovingServerId] = useState<string | null>(null);
   const [togglingServerId, setTogglingServerId] = useState<string | null>(null);
+  const [togglingPluginName, setTogglingPluginName] = useState<string | null>(null);
+  const [isReloadingPlugins, setIsReloadingPlugins] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [toolList, serverList] = await Promise.all([
+      const [toolList, serverList, pluginResult] = await Promise.all([
         window.api.tools.list(),
         window.api.mcp.getServers(),
+        window.api.plugins.list(),
       ]);
       setTools(toolList || []);
       setServers(serverList || []);
+      setNativePlugins(pluginResult?.plugins || []);
     } catch (err) {
       console.error('Failed to load plugin data:', err);
     } finally {
@@ -91,6 +106,40 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
       setError(err instanceof Error ? err.message : t('error.toggleServerFailed'));
     } finally {
       setTogglingServerId(null);
+    }
+  };
+
+  const handleTogglePlugin = async (name: string, enabled: boolean) => {
+    setTogglingPluginName(name);
+    try {
+      if (enabled) {
+        await window.api.plugins.enable(name);
+      } else {
+        await window.api.plugins.disable(name);
+      }
+      setNativePlugins((prev) => prev.map((p) => (p.name === name ? { ...p, enabled } : p)));
+      toast(enabled ? t('plugin.pluginEnabled') : t('plugin.pluginDisabled'), 'success');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to toggle plugin');
+    } finally {
+      setTogglingPluginName(null);
+    }
+  };
+
+  const handleReloadPlugins = async () => {
+    setIsReloadingPlugins(true);
+    try {
+      const result = await window.api.plugins.reload();
+      if (result?.success) {
+        setNativePlugins(result.plugins || []);
+        toast(t('plugin.reloadSuccess'), 'success');
+      } else {
+        setError(result?.error || 'Failed to reload plugins');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reload plugins');
+    } finally {
+      setIsReloadingPlugins(false);
     }
   };
 
@@ -255,6 +304,69 @@ export function PluginPanel({ onClose }: PluginPanelProps) {
                       style={{ opacity: removingServerId === server.id ? 0.5 : 1, cursor: removingServerId === server.id ? 'not-allowed' : 'pointer' }}
                     >
                       <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Native Plugins */}
+          <div className="workspace-card">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              <Package size={15} style={{ color: 'var(--accent)' }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{t('plugin.nativePlugins')}</span>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{t('plugin.toolCount', { count: nativePlugins.length })}</span>
+              <button
+                className="icon-button"
+                onClick={handleReloadPlugins}
+                disabled={isReloadingPlugins}
+                title={isReloadingPlugins ? '处理中...' : t('plugin.reloadPlugins')}
+                style={{ opacity: isReloadingPlugins ? 0.5 : 1, cursor: isReloadingPlugins ? 'not-allowed' : 'pointer' }}
+              >
+                <RefreshCw size={14} style={isReloadingPlugins ? { animation: 'spin 1s linear infinite' } : undefined} />
+              </button>
+            </div>
+            {nativePlugins.length === 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '24px 0', color: 'var(--text-muted)' }}>
+                <Package size={24} strokeWidth={1.2} style={{ opacity: 0.4 }} />
+                <span style={{ fontSize: 12 }}>{t('plugin.noNativePlugins')}</span>
+                <span style={{ fontSize: 11, opacity: 0.6 }}>{t('plugin.noNativePluginsHint')}</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {nativePlugins.map((plugin) => (
+                  <div key={plugin.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--bg-app)' }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: plugin.enabled ? 'var(--success)' : 'var(--text-muted)', flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>{plugin.name}</span>
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('plugin.pluginVersion', { version: plugin.version })}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                        {plugin.description && (
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{plugin.description}</span>
+                        )}
+                        {plugin.author && (
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)', opacity: 0.7 }}>{t('plugin.pluginAuthor', { author: plugin.author })}</span>
+                        )}
+                      </div>
+                      {plugin.hooks.length > 0 && (
+                        <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+                          {plugin.hooks.map((hook) => (
+                            <span key={hook} style={{ fontSize: 10, color: 'var(--accent)', background: 'var(--bg-hover)', padding: '1px 5px', borderRadius: 3 }}>{hook}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      className="icon-button"
+                      onClick={() => handleTogglePlugin(plugin.name, !plugin.enabled)}
+                      disabled={togglingPluginName === plugin.name}
+                      title={togglingPluginName === plugin.name ? '处理中...' : plugin.enabled ? t('plugin.disable') : t('plugin.enable')}
+                      style={{ opacity: togglingPluginName === plugin.name ? 0.5 : 1, cursor: togglingPluginName === plugin.name ? 'not-allowed' : 'pointer' }}
+                    >
+                      <Power size={13} style={{ color: plugin.enabled ? 'var(--success)' : 'var(--text-muted)' }} />
                     </button>
                   </div>
                 ))}

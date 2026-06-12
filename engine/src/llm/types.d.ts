@@ -7,6 +7,7 @@ export interface TokenUsage {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    cachedTokens?: number;
 }
 export interface ChatResponse {
     content: string | null;
@@ -19,6 +20,8 @@ export interface ChatMessage {
     content: string | null;
     tool_calls?: ToolCall[];
     tool_call_id?: string;
+    /** 缓存控制标记，用于 Prompt 缓存断点 */
+    cacheControl?: { type: 'ephemeral' };
 }
 export interface StreamEvent {
     type: 'content_delta' | 'tool_call_start' | 'tool_call_delta' | 'tool_call_end' | 'finish';

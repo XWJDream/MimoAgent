@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions';
 import type { ChatMessage, ChatResponse, ToolCall, TokenUsage, StreamEvent } from './types.js';
 import { withRetry } from './retry.js';
+import { PromptCacheManager } from './cache.js';
 
 export interface LLMClientConfig {
   apiKey: string;
@@ -27,9 +28,14 @@ export class LLMClient {
   }
 
   async chat(messages: ChatMessage[], tools?: ChatCompletionTool[], signal?: AbortSignal): Promise<ChatResponse> {
+    // 插入缓存断点（如果模型支持）
+    const processedMessages = PromptCacheManager.supportsCaching(this.config.model)
+      ? PromptCacheManager.insertCacheBreakpoints(messages)
+      : messages;
+
     const params: any = {
       model: this.config.model,
-      messages: this.toOpenAIMessages(messages),
+      messages: this.toOpenAIMessages(processedMessages),
       max_tokens: this.config.maxTokens,
       temperature: this.config.temperature,
     };
@@ -60,9 +66,14 @@ export class LLMClient {
     tools?: ChatCompletionTool[],
     signal?: AbortSignal,
   ): AsyncGenerator<StreamEvent> {
+    // 插入缓存断点（如果模型支持）
+    const processedMessages = PromptCacheManager.supportsCaching(this.config.model)
+      ? PromptCacheManager.insertCacheBreakpoints(messages)
+      : messages;
+
     const params: any = {
       model: this.config.model,
-      messages: this.toOpenAIMessages(messages),
+      messages: this.toOpenAIMessages(processedMessages),
       max_tokens: this.config.maxTokens,
       temperature: this.config.temperature,
       stream: true,
@@ -137,14 +148,18 @@ export class LLMClient {
   private toOpenAIMessages(messages: ChatMessage[]): ChatCompletionMessageParam[] {
     return messages.map((msg) => {
       if (msg.role === 'tool') {
-        return {
+        const toolMsg: any = {
           role: 'tool' as const,
           tool_call_id: msg.tool_call_id!,
           content: msg.content || '',
         };
+        if (msg.cacheControl) {
+          toolMsg.cache_control = msg.cacheControl;
+        }
+        return toolMsg;
       }
       if (msg.role === 'assistant' && msg.tool_calls) {
-        return {
+        const assistantMsg: any = {
           role: 'assistant' as const,
           content: msg.content,
           tool_calls: msg.tool_calls.map((tc) => ({
@@ -156,11 +171,19 @@ export class LLMClient {
             },
           })),
         };
+        if (msg.cacheControl) {
+          assistantMsg.cache_control = msg.cacheControl;
+        }
+        return assistantMsg;
       }
-      return {
+      const baseMsg: any = {
         role: msg.role as 'system' | 'user' | 'assistant',
         content: msg.content || '',
       };
+      if (msg.cacheControl) {
+        baseMsg.cache_control = msg.cacheControl;
+      }
+      return baseMsg;
     });
   }
 
