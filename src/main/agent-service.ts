@@ -51,6 +51,8 @@ interface AgentInstance {
   getMemory(): ProjectMemory;
   getMemoryService(): MemoryServiceInstance | null;
   getTaskRegistry(): TaskRegistryInstance | null;
+  getPluginRegistry(): PluginRegistryInstance | null;
+  getMcpManager(): McpManagerInstance | null;
   setSessionId(sessionId: string): void;
   getSessionId(): string;
 }
@@ -71,6 +73,20 @@ interface TaskRegistryInstance {
   done(sessionId: string, taskId: string): unknown;
   abandon(sessionId: string, taskId: string): unknown;
   rename(sessionId: string, taskId: string, newSummary: string): unknown;
+}
+
+interface PluginRegistryInstance {
+  listPlugins(): Array<{ name: string; version: string; description?: string; enabled: boolean }>;
+  setEnabled(name: string, enabled: boolean): void;
+  initialize(): Promise<void>;
+  reload(): Promise<void>;
+}
+
+interface McpManagerInstance {
+  getServerStatus(): Array<{ name: string; connected: boolean; toolCount: number; error?: string }>;
+  connect(name: string): Promise<unknown[]>;
+  disconnect(name: string): Promise<void>;
+  getAllTools(): unknown[];
 }
 
 interface ProjectMemory {
