@@ -33,7 +33,7 @@ describe('configStore', () => {
         toolPreset: 'act',
         maxTurns: 50,
         temperature: 0.2,
-        theme: 'dark',
+        theme: 'sakura',
         selectedAvatarId: 'default',
         sandboxEnabled: false,
         reasoningEffort: 'medium',
@@ -55,7 +55,7 @@ describe('configStore', () => {
       expect(state.config.toolPreset).toBe('act');
       expect(state.config.maxTurns).toBe(50);
       expect(state.config.temperature).toBe(0.2);
-      expect(state.config.theme).toBe('dark');
+      expect(state.config.theme).toBe('sakura');
     });
 
     it('should have unknown API status', () => {

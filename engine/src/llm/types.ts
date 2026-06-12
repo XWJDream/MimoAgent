@@ -23,6 +23,8 @@ export interface ChatMessage {
   content: string | null;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
+  /** 缓存控制标记，用于 Prompt 缓存断点 */
+  cacheControl?: { type: 'ephemeral' };
 }
 
 export interface StreamEvent {

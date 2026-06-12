@@ -1,13 +1,22 @@
-import React from 'react';
-import { Wrench, Activity, Layers, Zap, Database, Users } from 'lucide-react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Wrench, Activity, Layers, Zap, Users, CheckSquare, ChevronRight, ChevronDown } from 'lucide-react';
 import { ToolCard } from './ToolCard';
 import { useChatStore } from '../../stores/chatStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useT } from '../../i18n';
+import { useToast } from '../common/Toast';
 
 interface ToolPanelProps {
   forceOpen?: boolean;
 }
+
+// Pressure level labels and colors
+const PRESSURE_CONFIG: Record<number, { label: string; color: string; bg: string }> = {
+  0: { label: '无压力', color: 'var(--success)', bg: 'rgba(34,197,94,0.12)' },
+  1: { label: '轻度', color: '#eab308', bg: 'rgba(234,179,8,0.12)' },
+  2: { label: '中度', color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
+  3: { label: '严重', color: 'var(--error)', bg: 'rgba(239,68,68,0.12)' },
+};
 
 // Model context window sizes
 const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
@@ -41,6 +50,21 @@ export function ToolPanel({ forceOpen }: ToolPanelProps) {
   const { toolCalls, usage, messages, isThinking, isStreaming } = useChatStore();
   const { config, apiStatus } = useConfigStore();
   const runningTools = toolCalls.filter((tc) => tc.status === 'running').length;
+
+  // Context pressure state (updated via IPC from engine)
+  const [pressureLevel, setPressureLevel] = useState<0 | 1 | 2 | 3>(0);
+  const [pressureUsable, setPressureUsable] = useState(0);
+  const [pressureCurrent, setPressureCurrent] = useState(0);
+
+  useEffect(() => {
+    const api = (window as unknown as { api?: { agent?: { onContextPressure?: (cb: (data: { level: 0 | 1 | 2 | 3; usable: number; current: number }) => void) => () => void } } }).api;
+    const unsub = api?.agent?.onContextPressure?.((data) => {
+      setPressureLevel(data.level);
+      setPressureUsable(data.usable);
+      setPressureCurrent(data.current);
+    });
+    return () => { unsub?.(); };
+  }, []);
 
   const hasRunningTool = toolCalls.some((tc) => tc.status === 'running');
   const agentStatus = !config.apiKeyConfigured
@@ -77,9 +101,6 @@ export function ToolPanel({ forceOpen }: ToolPanelProps) {
   const contextPercent = Math.min((estimatedContextTokens / contextWindow) * 100, 100);
   const contextColor = contextPercent > 75 ? 'var(--error)' : contextPercent > 50 ? 'var(--warning)' : 'var(--accent)';
 
-  // Cache stats
-  const cacheHit = usage.sessionCachedTokens;
-  const cacheMiss = usage.sessionPromptTokens - cacheHit;
 
   return (
     <aside
@@ -131,36 +152,25 @@ export function ToolPanel({ forceOpen }: ToolPanelProps) {
         </div>
       </div>
 
-      {/* Cache Stats - only show when API provides cache data */}
-      {usage.sessionPromptTokens > 0 && (
-        <div className="inspector-card">
-          <div className="inspector-card-title">
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Database size={12} strokeWidth={1.7} /> {t('inspector.cacheStats')}
-            </span>
-          </div>
-          <div className="inspector-stat">
-            <span className="inspector-stat-label">{t('inspector.cacheHit')}</span>
-            <span className="inspector-stat-value" style={{ color: cacheHit > 0 ? 'var(--success)' : 'var(--text-muted)' }}>{formatTokens(cacheHit)}</span>
-          </div>
-          <div className="inspector-stat">
-            <span className="inspector-stat-label">{t('inspector.cacheMiss')}</span>
-            <span className="inspector-stat-value" style={{ color: cacheMiss > 0 ? 'var(--text-secondary)' : 'var(--text-muted)' }}>{formatTokens(Math.max(0, cacheMiss))}</span>
-          </div>
-          <div className="inspector-stat">
-            <span className="inspector-stat-label">{t('inspector.hitRate')}</span>
-            <span className="inspector-stat-value" style={{ color: cacheHit > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
-              {((cacheHit / usage.sessionPromptTokens) * 100).toFixed(1)}%
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* Context Window */}
       <div className="inspector-card">
         <div className="inspector-card-title">
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Zap size={12} strokeWidth={1.7} /> {t('inspector.contextWindow')}
+            {pressureLevel > 0 && (
+              <span style={{
+                marginLeft: 'auto',
+                fontSize: 10,
+                fontWeight: 600,
+                color: PRESSURE_CONFIG[pressureLevel].color,
+                background: PRESSURE_CONFIG[pressureLevel].bg,
+                padding: '1px 6px',
+                borderRadius: 4,
+              }}>
+                {PRESSURE_CONFIG[pressureLevel].label}
+              </span>
+            )}
           </span>
         </div>
         <div style={{ padding: '0 0 8px' }}>
@@ -176,10 +186,42 @@ export function ToolPanel({ forceOpen }: ToolPanelProps) {
               transition: 'width 300ms ease, background 300ms ease',
               background: contextColor,
             }} />
+            {/* Pressure zone marker */}
+            {pressureLevel > 0 && pressureUsable > 0 && (
+              <div style={{
+                position: 'absolute',
+                left: `${Math.min((pressureCurrent / contextWindow) * 100, 100)}%`,
+                top: -2,
+                width: 2,
+                height: 10,
+                background: PRESSURE_CONFIG[pressureLevel].color,
+                borderRadius: 1,
+                transition: 'left 300ms ease',
+              }} />
+            )}
           </div>
-          {contextPercent > 75 && (
+          {/* Pressure indicator bar */}
+          {pressureLevel > 0 && (
+            <div style={{ display: 'flex', gap: 2, marginTop: 4 }}>
+              {[1, 2, 3].map((lvl) => (
+                <div key={lvl} style={{
+                  flex: 1,
+                  height: 3,
+                  borderRadius: 2,
+                  background: pressureLevel >= lvl ? PRESSURE_CONFIG[lvl].color : 'var(--bg-hover)',
+                  transition: 'background 300ms ease',
+                }} />
+              ))}
+            </div>
+          )}
+          {pressureLevel >= 2 && (
+            <div style={{ fontSize: 10, color: PRESSURE_CONFIG[pressureLevel].color, marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+              {pressureLevel >= 3 ? '!!' : '!'} 上下文压力{PRESSURE_CONFIG[pressureLevel].label}，自动压缩已触发
+            </div>
+          )}
+          {contextPercent > 75 && pressureLevel < 2 && (
             <div style={{ fontSize: 10, color: 'var(--warning)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-              ⚠ {t('inspector.contextWarning') || '上下文即将用满，建议压缩'}
+              {t('inspector.contextWarning') || '上下文即将用满，建议压缩'}
             </div>
           )}
         </div>
@@ -228,6 +270,9 @@ export function ToolPanel({ forceOpen }: ToolPanelProps) {
 
       {/* Agent Collaboration - bound to current session */}
       <AgentCollabInspector />
+
+      {/* Task System */}
+      <TaskInspector />
 
       {/* Execution Log */}
       {toolCalls.length > 0 && (
@@ -315,6 +360,157 @@ function AgentCollabInspector() {
               )}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Task status color config
+const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  open: { label: 'task.open', color: 'var(--text-muted)', bg: 'rgba(156,163,175,0.12)' },
+  in_progress: { label: 'task.in_progress', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
+  blocked: { label: 'task.blocked', color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
+  done: { label: 'task.done', color: '#22c55e', bg: 'rgba(34,197,94,0.12)' },
+  abandoned: { label: 'task.abandoned', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
+};
+
+interface TaskItem {
+  id: string;
+  sessionId: string;
+  parentId?: string;
+  status: string;
+  summary: string;
+  owner?: string;
+  createdAt: number;
+  updatedAt: number;
+  endedAt?: number;
+}
+
+/** Task inspector panel in the sidebar */
+function TaskInspector() {
+  const t = useT();
+  const { toast } = useToast();
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const refreshTasks = useCallback(async () => {
+    try {
+      const api = (window as unknown as { api?: { tasks?: { list: (sessionId?: string, statusFilter?: string) => Promise<{ tasks: TaskItem[] }> } } }).api;
+      const result = await api?.tasks?.list?.();
+      if (result?.tasks) {
+        setTasks(result.tasks);
+      }
+    } catch (err) {
+      console.error('Failed to load tasks:', err);
+      toast('加载任务失败', 'error');
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    refreshTasks();
+    // Refresh every 5 seconds while streaming
+    const interval = setInterval(refreshTasks, 5000);
+    return () => clearInterval(interval);
+  }, [refreshTasks]);
+
+  // Build tree structure
+  const rootTasks = tasks.filter(t => !t.parentId);
+  const childMap = new Map<string, TaskItem[]>();
+  for (const task of tasks) {
+    if (task.parentId) {
+      const children = childMap.get(task.parentId) || [];
+      children.push(task);
+      childMap.set(task.parentId, children);
+    }
+  }
+
+  const incompleteCount = tasks.filter(t => t.status === 'open' || t.status === 'in_progress' || t.status === 'blocked').length;
+
+  const toggleExpand = (taskId: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  };
+
+  const renderTask = (task: TaskItem, depth: number = 0) => {
+    const config = TASK_STATUS_CONFIG[task.status] || TASK_STATUS_CONFIG.open;
+    const children = childMap.get(task.id) || [];
+    const hasChildren = children.length > 0;
+    const isExpanded = expanded.has(task.id);
+
+    return (
+      <div key={task.id}>
+        <div
+          style={{
+            padding: '4px 8px',
+            borderRadius: 4,
+            background: 'var(--bg-hover, rgba(255,255,255,0.03))',
+            fontSize: 11,
+            borderLeft: `2px solid ${config.color}`,
+            marginLeft: depth * 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            cursor: hasChildren ? 'pointer' : 'default',
+          }}
+          onClick={() => hasChildren && toggleExpand(task.id)}
+        >
+          {hasChildren ? (
+            isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />
+          ) : (
+            <span style={{ width: 10 }} />
+          )}
+          <span style={{
+            fontSize: 9,
+            fontWeight: 600,
+            color: config.color,
+            background: config.bg,
+            padding: '1px 4px',
+            borderRadius: 3,
+          }}>
+            {t(config.label)}
+          </span>
+          <span style={{
+            fontWeight: 500,
+            color: 'var(--text-primary)',
+            flex: 1,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+            {task.id}: {task.summary}
+          </span>
+        </div>
+        {hasChildren && isExpanded && children.map(child => renderTask(child, depth + 1))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="inspector-card">
+      <div className="inspector-card-title">
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CheckSquare size={12} strokeWidth={1.7} /> {t('task.title')}
+          {tasks.length > 0 && (
+            <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>
+              {incompleteCount > 0 && <span style={{ color: '#3b82f6' }}>{t('task.incomplete', { count: incompleteCount })}</span>}
+              {incompleteCount > 0 && tasks.length > 0 && ' · '}
+              <span>{t('task.count', { count: tasks.length })}</span>
+            </span>
+          )}
+        </span>
+      </div>
+      {tasks.length === 0 ? (
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', padding: '4px 0' }}>
+          {t('task.empty')}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 300, overflowY: 'auto' }}>
+          {rootTasks.map(task => renderTask(task))}
         </div>
       )}
     </div>

@@ -8,6 +8,8 @@ export const IPC = {
   AGENT_DONE: 'agent:done',
   AGENT_ERROR: 'agent:error',
   AGENT_THINKING: 'agent:thinking',
+  AGENT_CONTEXT_PRESSURE: 'agent:context-pressure',
+  AGENT_CONTEXT_OVERFLOW: 'agent:context-overflow',
 
   CONFIG_GET: 'config:get',
   CONFIG_SET: 'config:set',
@@ -22,6 +24,9 @@ export const IPC = {
   SESSION_DELETE: 'session:delete',
   SESSION_RENAME: 'session:rename',
   SESSION_SET_WORKSPACE: 'session:set-workspace',
+  SESSION_FORK: 'session:fork',
+  SESSION_ARCHIVE: 'session:archive',
+  SESSION_SEARCH: 'session:search',
   SESSIONS_SAVE: 'sessions:save',
   SESSIONS_LOAD: 'sessions:load',
   MESSAGES_SAVE: 'messages:save',
@@ -31,6 +36,7 @@ export const IPC = {
   FILE_READ: 'file:read',
   FILE_WRITE: 'file:write',
   FILE_DIALOG: 'file:dialog',
+  FILE_ATTACHMENTS_PICK: 'file:attachments-pick',
 
   SHELL_EXEC: 'shell:exec',
 
@@ -40,6 +46,8 @@ export const IPC = {
 
   MEMORY_GET: 'memory:get',
   MEMORY_SET: 'memory:set',
+  MEMORY_SEARCH: 'memory:search',
+  MEMORY_RECONCILE: 'memory:reconcile',
   COMPACT: 'conversation:compact',
   PERMISSION_REQUEST: 'permission:request',
   PERMISSION_RESPONSE: 'permission:response',
@@ -52,6 +60,10 @@ export const IPC = {
   MCP_SERVERS_ADD: 'mcp:servers:add',
   MCP_SERVERS_REMOVE: 'mcp:servers:remove',
   MCP_SERVERS_TOGGLE: 'mcp:servers:toggle',
+  MCP_CONNECT: 'mcp:connect',
+  MCP_DISCONNECT: 'mcp:disconnect',
+  MCP_LIST_TOOLS: 'mcp:list-tools',
+  MCP_STATUS: 'mcp:status',
 
   AUTOMATION_RULES_GET: 'automation:rules:get',
   AUTOMATION_RULES_ADD: 'automation:rules:add',
@@ -79,4 +91,15 @@ export const IPC = {
 
   CONSOLE_GET_LOGS: 'console:get-logs',
   LOG_ENTRY: 'log:entry',
+
+  TASK_LIST: 'task:list',
+  TASK_CREATE: 'task:create',
+  TASK_UPDATE: 'task:update',
+
+  PLUGIN_LIST: 'plugin:list',
+  PLUGIN_ENABLE: 'plugin:enable',
+  PLUGIN_DISABLE: 'plugin:disable',
+  PLUGIN_RELOAD: 'plugin:reload',
+
+  TOOL_READ_OUTPUT: 'tool:read-output',
 } as const;

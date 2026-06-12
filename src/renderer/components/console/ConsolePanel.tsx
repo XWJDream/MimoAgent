@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Terminal, Cpu, HardDrive, Wifi, Trash2, X } from 'lucide-react';
+import { Terminal, Cpu, HardDrive, Wifi, Trash2, X, Database } from 'lucide-react';
 import { useT } from '../../i18n';
 import { useChatStore } from '../../stores/chatStore';
 
@@ -414,6 +414,41 @@ export function ConsolePanel({ onClose }: ConsolePanelProps) {
           </div>
         </div>
       </div>
+
+      {/* Cache Stats */}
+      {usage.sessionPromptTokens > 0 && (
+        <div className="grid grid-cols-3 gap-2 p-3 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+          <div className="p-2 rounded" style={{ background: 'var(--bg-surface)' }}>
+            <div className="flex items-center gap-1 mb-1">
+              <Database size={10} strokeWidth={1.7} style={{ color: 'var(--success)' }} />
+              <span className="text-xs" style={{ color: 'var(--text-muted)', fontSize: 10 }}>缓存命中</span>
+            </div>
+            <span className="text-sm font-mono" style={{ color: usage.sessionCachedTokens > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
+              {usage.sessionCachedTokens > 1000 ? `${(usage.sessionCachedTokens / 1000).toFixed(1)}K` : usage.sessionCachedTokens}
+            </span>
+          </div>
+          <div className="p-2 rounded" style={{ background: 'var(--bg-surface)' }}>
+            <div className="flex items-center gap-1 mb-1">
+              <Database size={10} strokeWidth={1.7} style={{ color: 'var(--text-secondary)' }} />
+              <span className="text-xs" style={{ color: 'var(--text-muted)', fontSize: 10 }}>缓存未命中</span>
+            </div>
+            <span className="text-sm font-mono" style={{ color: 'var(--text-secondary)' }}>
+              {Math.max(0, usage.sessionPromptTokens - usage.sessionCachedTokens) > 1000
+                ? `${(Math.max(0, usage.sessionPromptTokens - usage.sessionCachedTokens) / 1000).toFixed(1)}K`
+                : Math.max(0, usage.sessionPromptTokens - usage.sessionCachedTokens)}
+            </span>
+          </div>
+          <div className="p-2 rounded" style={{ background: 'var(--bg-surface)' }}>
+            <div className="flex items-center gap-1 mb-1">
+              <Database size={10} strokeWidth={1.7} style={{ color: 'var(--accent)' }} />
+              <span className="text-xs" style={{ color: 'var(--text-muted)', fontSize: 10 }}>命中率</span>
+            </div>
+            <span className="text-sm font-mono" style={{ color: usage.sessionCachedTokens > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
+              {((usage.sessionCachedTokens / usage.sessionPromptTokens) * 100).toFixed(1)}%
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Top Tools */}
       {topTools.length > 0 && (

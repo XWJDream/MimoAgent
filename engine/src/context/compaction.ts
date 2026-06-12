@@ -49,10 +49,34 @@ export function shouldCompact(messages: ChatMessage[], maxTokens: number): boole
 }
 
 /**
- * Compact conversation by using the LLM to summarize old messages.
- * Keeps system prompt + recent N messages, summarizes the rest.
- * If llmClient is not provided, falls back to rule-based summary.
+ * Microcompact: lightweight compression that keeps tool_use structure
+ * but clears regenerable tool results from old messages.
+ *
+ * Only affects messages before the last `preserveRecent` messages so
+ * the most recent tool outputs stay intact for the model to reference.
+ *
+ * Returns a new array (non-destructive).
  */
+export function microcompact(messages: ChatMessage[], preserveRecent = 4): ChatMessage[] {
+  if (messages.length <= preserveRecent) return messages
+
+  const head = messages.slice(0, -preserveRecent)
+  const tail = messages.slice(-preserveRecent)
+
+  const compactedHead = head.map((msg) => {
+    // Only compact tool-role messages whose tool_call_id maps to a compactable tool
+    if (msg.role === 'tool' && msg.tool_call_id) {
+      return {
+        ...msg,
+        content: `[已压缩: 工具结果已省略，可重新执行]`,
+      }
+    }
+    return msg
+  })
+
+  return [...compactedHead, ...tail]
+}
+
 export async function compactMessages(
   messages: ChatMessage[],
   llmClient?: LLMClient | null,

@@ -6,7 +6,7 @@ export interface IpcChannels {
   'agent:clear': () => void;
   'agent:token': (token: string) => void;
   'agent:tool-start': (tool: { name: string; args: Record<string, unknown> }) => void;
-  'agent:tool-result': (result: { name: string; output: string; isError: boolean }) => void;
+  'agent:tool-result': (result: { name: string; output: string; isError: boolean; truncated?: boolean }) => void;
   'agent:done': (usage: { tokens: number; cost: number; cachedTokens?: number }) => void;
   'agent:error': (error: string) => void;
   'agent:thinking': () => void;
@@ -33,6 +33,7 @@ export interface IpcChannels {
   'file:read': (path: string) => string;
   'file:write': (path: string, content: string) => void;
   'file:dialog': () => string | null;
+  'file:attachments-pick': () => ChatAttachment[];
 
   // Shell
   'shell:exec': (command: string) => ShellResult;
@@ -55,7 +56,7 @@ export interface AppConfig {
   maxTurns: number;
   temperature: number;
   reasoningEffort: 'low' | 'medium' | 'high';
-  theme: 'dark' | 'light';
+  theme: 'dark' | 'light' | 'sakura';
   selectedAvatarId: string;
   sandboxEnabled: boolean;
 }
@@ -75,6 +76,14 @@ export interface FileTreeNode {
   path: string;
   type: 'file' | 'directory';
   children?: FileTreeNode[];
+}
+
+export interface ChatAttachment {
+  name: string;
+  path: string;
+  size: number;
+  kind: 'image' | 'text' | 'file';
+  content?: string;
 }
 
 export interface Session {
@@ -104,6 +113,8 @@ export interface ToolCallInfo {
   status: 'running' | 'done' | 'error';
   output?: string;
   duration?: number;
+  truncated?: boolean;
+  outputPath?: string;
 }
 
 export interface ToolResultInfo {
@@ -220,4 +231,20 @@ export interface CollaborationTask {
   toolCalls: number;
   inputTokens: number;
   outputTokens: number;
+}
+
+// Task system types (for IPC between main and renderer)
+export type TaskStatus = 'open' | 'in_progress' | 'blocked' | 'done' | 'abandoned';
+
+export interface TaskInfo {
+  id: string;
+  sessionId: string;
+  parentId?: string;
+  status: TaskStatus;
+  summary: string;
+  owner?: string;
+  createdAt: number;
+  updatedAt: number;
+  endedAt?: number;
+  children?: TaskInfo[];
 }

@@ -13,6 +13,8 @@ const IPC = {
   AGENT_DONE: 'agent:done',
   AGENT_ERROR: 'agent:error',
   AGENT_THINKING: 'agent:thinking',
+  AGENT_CONTEXT_PRESSURE: 'agent:context-pressure',
+  AGENT_CONTEXT_OVERFLOW: 'agent:context-overflow',
   CONFIG_GET: 'config:get',
   CONFIG_SET: 'config:set',
   WORKSPACE_GET: 'workspace:get',
@@ -24,6 +26,9 @@ const IPC = {
   SESSION_DELETE: 'session:delete',
   SESSION_RENAME: 'session:rename',
   SESSION_SET_WORKSPACE: 'session:set-workspace',
+  SESSION_FORK: 'session:fork',
+  SESSION_ARCHIVE: 'session:archive',
+  SESSION_SEARCH: 'session:search',
   SESSIONS_SAVE: 'sessions:save',
   SESSIONS_LOAD: 'sessions:load',
   MESSAGES_SAVE: 'messages:save',
@@ -32,12 +37,15 @@ const IPC = {
   FILE_READ: 'file:read',
   FILE_WRITE: 'file:write',
   FILE_DIALOG: 'file:dialog',
+  FILE_ATTACHMENTS_PICK: 'file:attachments-pick',
   SHELL_EXEC: 'shell:exec',
   WINDOW_MINIMIZE: 'window:minimize',
   WINDOW_MAXIMIZE: 'window:maximize',
   WINDOW_CLOSE: 'window:close',
   MEMORY_GET: 'memory:get',
   MEMORY_SET: 'memory:set',
+  MEMORY_SEARCH: 'memory:search',
+  MEMORY_RECONCILE: 'memory:reconcile',
   COMPACT: 'conversation:compact',
   PERMISSION_REQUEST: 'permission:request',
   PERMISSION_RESPONSE: 'permission:response',
@@ -47,6 +55,10 @@ const IPC = {
   MCP_SERVERS_ADD: 'mcp:servers:add',
   MCP_SERVERS_REMOVE: 'mcp:servers:remove',
   MCP_SERVERS_TOGGLE: 'mcp:servers:toggle',
+  MCP_CONNECT: 'mcp:connect',
+  MCP_DISCONNECT: 'mcp:disconnect',
+  MCP_LIST_TOOLS: 'mcp:list-tools',
+  MCP_STATUS: 'mcp:status',
   AUTOMATION_RULES_GET: 'automation:rules:get',
   AUTOMATION_RULES_ADD: 'automation:rules:add',
   AUTOMATION_RULES_REMOVE: 'automation:rules:remove',
@@ -67,6 +79,17 @@ const IPC = {
   SUPERVISOR_SET_ENABLED: 'supervisor:set-enabled',
 
   CONSOLE_GET_LOGS: 'console:get-logs',
+
+  TASK_LIST: 'task:list',
+  TASK_CREATE: 'task:create',
+  TASK_UPDATE: 'task:update',
+
+  PLUGIN_LIST: 'plugin:list',
+  PLUGIN_ENABLE: 'plugin:enable',
+  PLUGIN_DISABLE: 'plugin:disable',
+  PLUGIN_RELOAD: 'plugin:reload',
+
+  TOOL_READ_OUTPUT: 'tool:read-output',
 } as const;
 
 const api = {
@@ -85,8 +108,8 @@ const api = {
       ipcRenderer.on(IPC.AGENT_TOOL_START, handler);
       return () => ipcRenderer.removeListener(IPC.AGENT_TOOL_START, handler);
     },
-    onToolResult: (cb: (result: { name: string; output: string; isError: boolean }) => void) => {
-      const handler = (_: unknown, result: { name: string; output: string; isError: boolean }) => cb(result);
+    onToolResult: (cb: (result: { name: string; output: string; isError: boolean; truncated?: boolean; outputPath?: string }) => void) => {
+      const handler = (_: unknown, result: { name: string; output: string; isError: boolean; truncated?: boolean; outputPath?: string }) => cb(result);
       ipcRenderer.on(IPC.AGENT_TOOL_RESULT, handler);
       return () => ipcRenderer.removeListener(IPC.AGENT_TOOL_RESULT, handler);
     },
@@ -104,6 +127,16 @@ const api = {
       const handler = () => cb();
       ipcRenderer.on(IPC.AGENT_THINKING, handler);
       return () => ipcRenderer.removeListener(IPC.AGENT_THINKING, handler);
+    },
+    onContextPressure: (cb: (data: { level: 0 | 1 | 2 | 3; usable: number; current: number }) => void) => {
+      const handler = (_: unknown, data: { level: 0 | 1 | 2 | 3; usable: number; current: number }) => cb(data);
+      ipcRenderer.on(IPC.AGENT_CONTEXT_PRESSURE, handler);
+      return () => ipcRenderer.removeListener(IPC.AGENT_CONTEXT_PRESSURE, handler);
+    },
+    onContextOverflow: (cb: (data: { action: 'auto_compact' | 'manual_required' }) => void) => {
+      const handler = (_: unknown, data: { action: 'auto_compact' | 'manual_required' }) => cb(data);
+      ipcRenderer.on(IPC.AGENT_CONTEXT_OVERFLOW, handler);
+      return () => ipcRenderer.removeListener(IPC.AGENT_CONTEXT_OVERFLOW, handler);
     },
   },
 
@@ -128,6 +161,9 @@ const api = {
     delete: (id: string) => ipcRenderer.invoke(IPC.SESSION_DELETE, id),
     rename: (id: string, name: string) => ipcRenderer.invoke(IPC.SESSION_RENAME, id, name),
     setWorkspace: (id: string, path: string) => ipcRenderer.invoke(IPC.SESSION_SET_WORKSPACE, id, path),
+    fork: (id: string, title: string) => ipcRenderer.invoke(IPC.SESSION_FORK, id, title),
+    archive: (id: string) => ipcRenderer.invoke(IPC.SESSION_ARCHIVE, id),
+    search: (query: string) => ipcRenderer.invoke(IPC.SESSION_SEARCH, query),
   },
 
   // Files
@@ -135,6 +171,7 @@ const api = {
     list: (path?: string) => ipcRenderer.invoke(IPC.FILE_LIST, path),
     read: (path: string) => ipcRenderer.invoke(IPC.FILE_READ, path),
     write: (path: string, content: string) => ipcRenderer.invoke(IPC.FILE_WRITE, path, content),
+    pickAttachments: () => ipcRenderer.invoke(IPC.FILE_ATTACHMENTS_PICK),
   },
 
   // Window
@@ -148,6 +185,8 @@ const api = {
   memory: {
     get: () => ipcRenderer.invoke(IPC.MEMORY_GET),
     set: (content: string) => ipcRenderer.invoke(IPC.MEMORY_SET, content),
+    search: (query: string, options?: { scope?: string; limit?: number }) => ipcRenderer.invoke(IPC.MEMORY_SEARCH, query, options),
+    reconcile: () => ipcRenderer.invoke(IPC.MEMORY_RECONCILE),
   },
 
   // Conversation
@@ -184,6 +223,10 @@ const api = {
       ipcRenderer.invoke(IPC.MCP_SERVERS_ADD, server),
     removeServer: (id: string) => ipcRenderer.invoke(IPC.MCP_SERVERS_REMOVE, id),
     toggleServer: (id: string, enabled: boolean) => ipcRenderer.invoke(IPC.MCP_SERVERS_TOGGLE, id, enabled),
+    connect: (name: string) => ipcRenderer.invoke(IPC.MCP_CONNECT, name),
+    disconnect: (name: string) => ipcRenderer.invoke(IPC.MCP_DISCONNECT, name),
+    listTools: () => ipcRenderer.invoke(IPC.MCP_LIST_TOOLS),
+    getStatus: () => ipcRenderer.invoke(IPC.MCP_STATUS),
   },
 
   // Automation
@@ -242,6 +285,26 @@ const api = {
     getLogs: () => ipcRenderer.invoke(IPC.CONSOLE_GET_LOGS),
   },
 
+  // Task Management
+  tasks: {
+    list: (sessionId?: string, statusFilter?: string) => ipcRenderer.invoke(IPC.TASK_LIST, sessionId, statusFilter),
+    create: (summary: string, parentId?: string, sessionId?: string) => ipcRenderer.invoke(IPC.TASK_CREATE, summary, parentId, sessionId),
+    update: (taskId: string, updates: Record<string, unknown>, sessionId?: string) => ipcRenderer.invoke(IPC.TASK_UPDATE, taskId, updates, sessionId),
+  },
+
+  // Plugin Management
+  plugins: {
+    list: () => ipcRenderer.invoke(IPC.PLUGIN_LIST),
+    enable: (name: string) => ipcRenderer.invoke(IPC.PLUGIN_ENABLE, name),
+    disable: (name: string) => ipcRenderer.invoke(IPC.PLUGIN_DISABLE, name),
+    reload: () => ipcRenderer.invoke(IPC.PLUGIN_RELOAD),
+  },
+
+  // Tool output reading (for truncated outputs saved to disk)
+  tool: {
+    readOutput: (filePath: string) => ipcRenderer.invoke(IPC.TOOL_READ_OUTPUT, filePath),
+  },
+
   // Generic event listeners
   on: (channel: string, cb: (...args: unknown[]) => void) => {
     const handler = (_: unknown, ...args: unknown[]) => cb(_, ...args);
@@ -254,13 +317,13 @@ const api = {
 
   // Permission
   permission: {
-    request: (params: { toolName: string; description: string; riskLevel: string }) =>
-      ipcRenderer.invoke(IPC.PERMISSION_REQUEST, params),
-    onResponse: (cb: (response: { requestId: string; allowed: boolean }) => void) => {
-      const handler = (_: unknown, response: { requestId: string; allowed: boolean }) => cb(response);
-      ipcRenderer.on(IPC.PERMISSION_RESPONSE, handler);
-      return () => ipcRenderer.removeListener(IPC.PERMISSION_RESPONSE, handler);
+    onRequest: (cb: (request: { id: string; toolName: string; description: string; args: Record<string, unknown>; riskLevel: string }) => void) => {
+      const handler = (_: unknown, request: { id: string; toolName: string; description: string; args: Record<string, unknown>; riskLevel: string }) => cb(request);
+      ipcRenderer.on(IPC.PERMISSION_REQUEST, handler);
+      return () => ipcRenderer.removeListener(IPC.PERMISSION_REQUEST, handler);
     },
+    respond: (requestId: string, response: { allowed: boolean; always?: boolean; feedback?: string }) =>
+      ipcRenderer.invoke('permission:respond', requestId, response),
   },
 };
 

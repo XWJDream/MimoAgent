@@ -40,6 +40,10 @@ function loadEnvConfig(): Partial<MimoConfig> {
   if (process.env.MIMO_API_KEY) env.apiKey = process.env.MIMO_API_KEY;
   if (process.env.MIMO_PERMISSION_MODE) env.permissionMode = process.env.MIMO_PERMISSION_MODE;
   if (process.env.MIMO_MAX_TURNS) env.maxTurns = parseInt(process.env.MIMO_MAX_TURNS, 10);
+  // Provider 环境变量
+  if (process.env.MIMO_PROVIDER) {
+    env.provider = { name: process.env.MIMO_PROVIDER };
+  }
   return env as Partial<MimoConfig>;
 }
 

@@ -1,5 +1,9 @@
 import type { PermissionMode } from '../config/types.js';
 import type { RiskLevel } from '../tools/base.js';
+import type { AgentMode } from './agent-rules.js';
+import { wildcardMatch } from './wildcard.js';
+import { evaluate, type Ruleset } from './evaluator.js';
+import { getAgentRules } from './agent-rules.js';
 
 export interface PermissionRequest {
   toolName: string;
@@ -49,30 +53,6 @@ const SENSITIVE_PATH_RULES: PathPermissionRule[] = [
   },
 ];
 
-function matchPattern(pattern: string, filePath: string): boolean {
-  // Normalize paths
-  const normalizedPattern = pattern.replace(/\\/g, '/');
-  const normalizedPath = filePath.replace(/\\/g, '/');
-
-  // Simple glob matching
-  if (normalizedPattern === '**') return true;
-
-  // Convert glob to regex
-  let regexStr = normalizedPattern
-    .replace(/\./g, '\\.')
-    .replace(/\*\*/g, '{{GLOBSTAR}}')
-    .replace(/\*/g, '[^/]*')
-    .replace(/\{\{GLOBSTAR\}\}/g, '.*');
-
-  regexStr = `^${regexStr}$`;
-
-  try {
-    return new RegExp(regexStr).test(normalizedPath);
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Extract the primary file path from tool arguments.
  */
@@ -99,14 +79,25 @@ export type PermissionPromptFn = (request: PermissionRequest) => Promise<Permiss
 
 export class PermissionChecker {
   private mode: PermissionMode;
+  private agentMode: AgentMode;
   private sessionOverrides: Map<string, boolean> = new Map();
   private userRules: PathPermissionRule[] = [];
+  private agentRuleset: Ruleset;
+  private userRuleset: Ruleset;
   private externalPromptFn: PermissionPromptFn | null = null;
 
-  constructor(mode: PermissionMode, userRules?: PathPermissionRule[], promptFn?: PermissionPromptFn) {
+  constructor(
+    mode: PermissionMode,
+    userRules?: PathPermissionRule[],
+    promptFn?: PermissionPromptFn,
+    agentMode?: AgentMode,
+  ) {
     this.mode = mode;
     this.userRules = userRules || [];
     this.externalPromptFn = promptFn || null;
+    this.agentMode = agentMode ?? 'build';
+    this.agentRuleset = getAgentRules(this.agentMode);
+    this.userRuleset = [];
   }
 
   /**
@@ -125,8 +116,27 @@ export class PermissionChecker {
     return this.mode;
   }
 
+  /**
+   * 设置 Agent 模式，自动加载对应的规则集
+   */
+  setAgentMode(agentMode: AgentMode): void {
+    this.agentMode = agentMode;
+    this.agentRuleset = getAgentRules(agentMode);
+  }
+
+  getAgentMode(): AgentMode {
+    return this.agentMode;
+  }
+
   setUserRules(rules: PathPermissionRule[]): void {
     this.userRules = rules;
+  }
+
+  /**
+   * 设置用户自定义的评估器规则集（通配符规则）
+   */
+  setUserRuleset(rules: Ruleset): void {
+    this.userRuleset = rules;
   }
 
   async check(request: PermissionRequest): Promise<PermissionResult> {
@@ -136,39 +146,88 @@ export class PermissionChecker {
       return { allowed: this.sessionOverrides.get(key)! };
     }
 
-    // Check path-based rules
+    // Extract file path for path-based rules
     const filePath = extractFilePath(request.toolName, request.args);
+
     if (filePath) {
-      // Check sensitive path rules first (always enforced)
+      // 1. 先检查敏感路径规则（最高优先级，使用通配符匹配）
       for (const rule of SENSITIVE_PATH_RULES) {
-        if (matchPattern(rule.pattern, filePath) &&
-            (rule.tools.length === 0 || rule.tools.includes(request.toolName))) {
+        if (
+          wildcardMatch(filePath, rule.pattern) &&
+          (rule.tools.length === 0 || rule.tools.includes(request.toolName))
+        ) {
           if (rule.action === 'deny') {
-            return { allowed: false, reason: rule.description || `Path ${filePath} is protected` };
+            return {
+              allowed: false,
+              reason: rule.description || `Path ${filePath} is protected`,
+            };
           }
           if (rule.action === 'confirm') {
-            // Fall through to promptUser, but include the rule description
-            return this.promptUser({ ...request, description: rule.description || request.description });
+            return this.promptUser({
+              ...request,
+              description: rule.description || request.description,
+            });
           }
-          // 'allow' = continue to next rule
         }
       }
 
-      // Check user-defined rules
+      // 2. 检查用户路径规则
       for (const rule of this.userRules) {
-        if (matchPattern(rule.pattern, filePath) &&
-            (rule.tools.length === 0 || rule.tools.includes(request.toolName))) {
+        if (
+          wildcardMatch(filePath, rule.pattern) &&
+          (rule.tools.length === 0 || rule.tools.includes(request.toolName))
+        ) {
           if (rule.action === 'deny') {
-            return { allowed: false, reason: rule.description || `Path ${filePath} is protected by user rule` };
+            return {
+              allowed: false,
+              reason: rule.description || `Path ${filePath} is protected by user rule`,
+            };
           }
           if (rule.action === 'confirm') {
-            return this.promptUser({ ...request, description: rule.description || request.description });
+            return this.promptUser({
+              ...request,
+              description: rule.description || request.description,
+            });
           }
           if (rule.action === 'allow') {
             return { allowed: true };
           }
         }
       }
+
+      // 3. 使用评估器检查 Agent 规则 + 用户评估器规则
+      const rule = evaluate(
+        request.toolName,
+        filePath,
+        this.agentRuleset,
+        this.userRuleset,
+      );
+
+      if (rule.action === 'deny') {
+        return {
+          allowed: false,
+          reason: `Path ${filePath} is denied by agent policy`,
+        };
+      }
+      if (rule.action === 'allow') {
+        return { allowed: true };
+      }
+      // action === 'ask' → fall through to mode-based logic
+    }
+
+    // 对于没有文件路径的请求，使用 Agent 规则 + 用户规则评估
+    const rule = evaluate(
+      request.toolName,
+      '*',
+      this.agentRuleset,
+      this.userRuleset,
+    );
+
+    if (rule.action === 'deny') {
+      return { allowed: false, reason: `Permission ${request.toolName} is denied by policy` };
+    }
+    if (rule.action === 'allow') {
+      return { allowed: true };
     }
 
     // Fall back to mode-based logic

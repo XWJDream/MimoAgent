@@ -58,7 +58,6 @@ describe('ToolPanel', () => {
     expect(screen.getByText('mimo-v2.5-pro')).toBeInTheDocument();
     expect(screen.getByText('600')).toBeInTheDocument();
     expect(screen.getByText('400')).toBeInTheDocument();
-    expect(screen.getByText('250')).toBeInTheDocument();
     expect(screen.getAllByText('2').length).toBeGreaterThan(0);
     expect(screen.getByText('read_file')).toBeInTheDocument();
   });

@@ -1,12 +1,25 @@
 import type { BaseTool, ToolResult, ToolContext, ToolCategory } from './base.js';
 import type { ToolDefinition } from './schema.js';
+import { truncateOutput, type TruncateOptions } from './truncator.js';
+
+export interface ToolOutputConfig {
+  /** Maximum allowed character length (default 50 000) */
+  maxLength?: number;
+  /** Whether auto-truncation is enabled (default true) */
+  autoTruncate?: boolean;
+}
 
 export class ToolRegistry {
   private tools: Map<string, BaseTool> = new Map();
   private context: ToolContext | null = null;
+  private outputConfig: ToolOutputConfig = {};
 
   setContext(context: ToolContext): void {
     this.context = context;
+  }
+
+  setOutputConfig(config: ToolOutputConfig): void {
+    this.outputConfig = config;
   }
 
   register(tool: BaseTool): void {
@@ -58,7 +71,31 @@ export class ToolRegistry {
     }
 
     try {
-      return await tool.execute(args, this.context);
+      let result = await tool.execute(args, this.context);
+
+      // Auto-truncate large tool outputs to prevent context window overflow
+      if (this.outputConfig.autoTruncate !== false) {
+        const truncateOpts: TruncateOptions = {
+          maxOutputLength: this.outputConfig.maxLength ?? 50_000,
+          toolName: name,
+        };
+        const truncated = truncateOutput(result.output, truncateOpts);
+        if (truncated.truncated) {
+          result = {
+            ...result,
+            output: truncated.output,
+            metadata: {
+              ...result.metadata,
+              truncated: true,
+              originalLength: truncated.originalLength,
+              truncatedLength: truncated.truncatedLength,
+              outputPath: truncated.outputPath,
+            },
+          };
+        }
+      }
+
+      return result;
     } catch (error) {
       return {
         output: `Tool execution error: ${error instanceof Error ? error.message : String(error)}`,

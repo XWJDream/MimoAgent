@@ -10,11 +10,15 @@ import { readdir } from 'fs/promises';
 import { basename, isAbsolute, join, relative, resolve } from 'path';
 import { pathToFileURL } from 'url';
 import { IPC } from '../shared/ipc-channels.js';
-import type { AppConfig, AutomationExecution, AutomationRule, CollaborationTask, FileTreeNode, McpServerConfig, PublicAppConfig, Session, ToolInfo, WorkspaceInfo } from '../shared/types.js';
+import type { AppConfig, AutomationExecution, AutomationRule, ChatAttachment, CollaborationTask, FileTreeNode, McpServerConfig, PublicAppConfig, Session, ToolInfo, WorkspaceInfo } from '../shared/types.js';
 import { AgentService } from './agent-service.js';
 import { runRules } from './supervisor-rules.js';
 import type { Violation } from './supervisor-rules.js';
 import { ttsAudioStore } from './tts-store.js';
+import { initDatabase } from './storage/database.js';
+import * as sessionRepo from './storage/session-repo.js';
+import * as messageRepo from './storage/message-repo.js';
+import { migrateFromJson } from './storage/migrate.js';
 
 // Module-level ref to the main window, set once registerIpcHandlers is called
 let mainWindowRef: BrowserWindow | null = null;
@@ -48,6 +52,34 @@ const MCP_SERVERS_FILE = join(app.getPath('userData'), 'mcp-servers.json');
 const AUTOMATION_RULES_FILE = join(app.getPath('userData'), 'automation-rules.json');
 const AUTOMATION_EXECUTIONS_FILE = join(app.getPath('userData'), 'automation-executions.json');
 const CONFIG_FILE = join(app.getPath('userData'), 'config.json');
+const CONFIG_SCHEMA_VERSION = 1;
+
+// 数据库延迟初始化标记
+let dbInitialized = false;
+
+function ensureDbInitialized(): void {
+  if (dbInitialized) return;
+  dbInitialized = true;
+  const userDataPath = app.getPath('userData');
+  initDatabase(userDataPath);
+  migrateFromJson(userDataPath).then(({ sessions: s, messages: m }) => {
+    if (s > 0 || m > 0) console.log(`[Migrate] Migrated ${s} sessions, ${m} messages from JSON to SQLite`);
+  }).catch(err => console.warn('[Migrate] Migration failed:', err));
+}
+
+interface StoredConfig extends Partial<AppConfig> {
+  configSchemaVersion?: number;
+}
+
+export function migrateStoredConfig(data: StoredConfig): { config: StoredConfig; migrated: boolean } {
+  if ((data.configSchemaVersion ?? 0) >= CONFIG_SCHEMA_VERSION) {
+    return { config: data, migrated: false };
+  }
+  return {
+    config: { ...data, theme: 'sakura', configSchemaVersion: CONFIG_SCHEMA_VERSION },
+    migrated: true,
+  };
+}
 
 /** Generate a unique ID with timestamp + random suffix to avoid collisions */
 function generateId(): string {
@@ -109,7 +141,7 @@ function validateConfigValue(key: keyof AppConfig, value: unknown): AppConfig[ke
       if (typeof value !== 'number' || value < 0 || value > 2) throw new Error('temperature must be between 0 and 2');
       return value;
     case 'theme':
-      if (value !== 'dark' && value !== 'light') throw new Error('theme is invalid');
+      if (value !== 'dark' && value !== 'light' && value !== 'sakura') throw new Error('theme is invalid');
       return value;
     case 'sandboxEnabled':
       if (typeof value !== 'boolean') throw new Error('sandboxEnabled must be a boolean');
@@ -125,8 +157,13 @@ function validateConfigValue(key: keyof AppConfig, value: unknown): AppConfig[ke
 function loadConfig(): Partial<AppConfig> {
   try {
     if (existsSync(CONFIG_FILE)) {
-      const data = readFileSync(CONFIG_FILE, 'utf-8');
-      return JSON.parse(data);
+      const loaded = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8')) as StoredConfig;
+      const { config: data, migrated } = migrateStoredConfig(loaded);
+      if (migrated) {
+        writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2), 'utf-8');
+      }
+      const { configSchemaVersion: _configSchemaVersion, ...config } = data;
+      return config;
     }
   } catch (err) {
     console.error('[Config] Failed to load config:', err);
@@ -136,7 +173,8 @@ function loadConfig(): Partial<AppConfig> {
 
 function saveConfig(config: AppConfig): void {
   try {
-    writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+    const storedConfig: StoredConfig = { ...config, configSchemaVersion: CONFIG_SCHEMA_VERSION };
+    writeFileSync(CONFIG_FILE, JSON.stringify(storedConfig, null, 2), 'utf-8');
   } catch (err) {
     console.error('[Config] Failed to save config:', err);
   }
@@ -342,6 +380,19 @@ function createDefaultSession(): Session {
   };
 }
 
+/** 将 SQLite 行转换为前端 Session 类型 */
+function rowToSession(row: sessionRepo.SessionRow): Session {
+  return {
+    id: row.id,
+    name: row.title,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+    messageCount: row.message_count,
+    workspacePath: row.workspace_path,
+    workspaceName: row.workspace_name,
+  };
+}
+
 function normalizeSessions(value: unknown): Session[] {
   if (!Array.isArray(value)) return [createDefaultSession()];
   const normalized = value
@@ -365,23 +416,61 @@ function normalizeSessions(value: unknown): Session[] {
 
 function loadSessionsFromDisk(): Session[] {
   try {
-    if (!existsSync(SESSIONS_FILE)) return [createDefaultSession()];
-    const data = readFileSync(SESSIONS_FILE, 'utf-8');
-    return normalizeSessions(JSON.parse(data));
+    ensureDbInitialized();
+    const rows = sessionRepo.listSessions();
+    if (rows.length === 0) {
+      // 确保默认会话存在
+      const existing = sessionRepo.getSession('default');
+      if (!existing) {
+        sessionRepo.createSession({ id: 'default', title: '新对话' });
+      }
+      return [createDefaultSession()];
+    }
+    return rows.map(rowToSession);
   } catch (err) {
-    console.warn('[SESSIONS_LOAD] Failed to load sessions:', err);
-    return [createDefaultSession()];
+    console.warn('[SESSIONS_LOAD] Failed to load sessions from SQLite:', err);
+    // 回退到 JSON 文件
+    try {
+      if (!existsSync(SESSIONS_FILE)) return [createDefaultSession()];
+      const data = readFileSync(SESSIONS_FILE, 'utf-8');
+      return normalizeSessions(JSON.parse(data));
+    } catch {
+      return [createDefaultSession()];
+    }
   }
 }
 
 function saveSessionsToDisk(sessionsData: Session[]): { success: boolean; error?: string } {
   try {
-    const dir = join(SESSIONS_FILE, '..');
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(SESSIONS_FILE, JSON.stringify(sessionsData, null, 2));
+    ensureDbInitialized();
+    for (const s of sessionsData) {
+      const existing = sessionRepo.getSession(s.id);
+      if (existing) {
+        sessionRepo.updateSession(s.id, {
+          title: s.name,
+          workspacePath: s.workspacePath,
+          workspaceName: s.workspaceName,
+        });
+      } else {
+        sessionRepo.createSession({
+          id: s.id,
+          title: s.name,
+          workspacePath: s.workspacePath,
+          workspaceName: s.workspaceName,
+        });
+      }
+    }
     return { success: true };
   } catch (e) {
-    return { success: false, error: String(e) };
+    // 回退到 JSON 文件
+    try {
+      const dir = join(SESSIONS_FILE, '..');
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      writeFileSync(SESSIONS_FILE, JSON.stringify(sessionsData, null, 2));
+      return { success: true };
+    } catch (e2) {
+      return { success: false, error: String(e2) };
+    }
   }
 }
 
@@ -394,7 +483,7 @@ const defaultConfig: AppConfig = {
   maxTurns: 50,
   temperature: 0.2,
   reasoningEffort: 'medium',
-  theme: 'dark',
+  theme: 'sakura',
   selectedAvatarId: 'default',
   sandboxEnabled: false,
 };
@@ -510,7 +599,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     IPC.SESSION_DELETE,
     IPC.SESSION_RENAME,
     IPC.SESSION_SET_WORKSPACE,
+    IPC.SESSION_FORK,
+    IPC.SESSION_ARCHIVE,
+    IPC.SESSION_SEARCH,
     IPC.FILE_DIALOG,
+    IPC.FILE_ATTACHMENTS_PICK,
     IPC.FILE_LIST,
     IPC.FILE_READ,
     IPC.FILE_WRITE,
@@ -519,6 +612,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     IPC.AGENT_CLEAR,
     IPC.MEMORY_GET,
     IPC.MEMORY_SET,
+    IPC.MEMORY_SEARCH,
+    IPC.MEMORY_RECONCILE,
     IPC.COMPACT,
     IPC.SESSIONS_SAVE,
     IPC.SESSIONS_LOAD,
@@ -530,6 +625,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     IPC.MCP_SERVERS_ADD,
     IPC.MCP_SERVERS_REMOVE,
     IPC.MCP_SERVERS_TOGGLE,
+    IPC.MCP_CONNECT,
+    IPC.MCP_DISCONNECT,
+    IPC.MCP_LIST_TOOLS,
+    IPC.MCP_STATUS,
     IPC.AUTOMATION_RULES_GET,
     IPC.AUTOMATION_RULES_ADD,
     IPC.AUTOMATION_RULES_REMOVE,
@@ -548,6 +647,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     IPC.SUPERVISOR_GET_VIOLATIONS,
     IPC.SUPERVISOR_SET_ENABLED,
     IPC.CONSOLE_GET_LOGS,
+    IPC.TASK_LIST,
+    IPC.TASK_CREATE,
+    IPC.TASK_UPDATE,
+    'permission:respond',
   ].forEach((channel) => ipcMain.removeHandler(channel));
 
   [IPC.WINDOW_MINIMIZE, IPC.WINDOW_MAXIMIZE, IPC.WINDOW_CLOSE, IPC.AGENT_STOP].forEach((channel) => {
@@ -595,6 +698,22 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return { allowed: result.response === 0 };
   });
 
+  // Permission response handler - resolves pending permission requests from frontend
+  ipcMain.handle('permission:respond', async (_, requestId: string, response: { allowed: boolean; always?: boolean; feedback?: string }) => {
+    const { pendingPermissions } = await import('./agent-service.js');
+    const pending = pendingPermissions.get(requestId);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      pendingPermissions.delete(requestId);
+      pending.resolve({
+        allowed: response.allowed,
+        always: response.always,
+        reason: response.feedback || undefined,
+      });
+    }
+    return { success: true };
+  });
+
   ipcMain.handle(IPC.WORKSPACE_GET, () => getWorkspaceInfo());
   ipcMain.handle(IPC.WORKSPACE_SET, (_, path: string) => setWorkspace(path));
   ipcMain.handle(IPC.WORKSPACE_SELECT, async () => {
@@ -604,25 +723,24 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle(IPC.SESSION_LIST, () => sessions);
   ipcMain.handle(IPC.SESSION_CREATE, (_, name?: string, workspacePath?: string) => {
+    ensureDbInitialized();
     const ws = workspacePath ? resolve(workspacePath) : '';
-    const session: Session = {
-      id: generateId(),
-      name: name || `对话 ${sessions.length + 1}`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      messageCount: 0,
+    const sessionData = sessionRepo.createSession({
+      title: name || `对话 ${sessions.length + 1}`,
       workspacePath: ws,
       workspaceName: ws ? basename(ws) : '',
-    };
+    });
+    const session = rowToSession(sessionData);
     sessions.push(session);
     activeSessionId = session.id;
-    saveSessionsToDisk(sessions);
     sendLog('info', `Session created: ${session.name} (${session.id})`, 'Session');
     return session;
   });
   ipcMain.handle(IPC.SESSION_SWITCH, (_, id: string) => {
-    const session = sessions.find((s) => s.id === id);
-    if (session) {
+    ensureDbInitialized();
+    const row = sessionRepo.getSession(id);
+    if (row) {
+      const session = rowToSession(row);
       const oldWorkspace = getCurrentWorkspace();
       activeSessionId = id;
       const newWorkspace = getCurrentWorkspace();
@@ -639,31 +757,34 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
   ipcMain.handle(IPC.SESSION_DELETE, (_, id: string) => {
     if (id === 'default') return getActiveSession();
-    const idx = sessions.findIndex((s) => s.id === id);
-    if (idx >= 0) {
-      sessions.splice(idx, 1);
-      if (sessions.length === 0) sessions = [createDefaultSession()];
-      if (activeSessionId === id) activeSessionId = sessions[0].id;
-      saveSessionsToDisk(sessions);
-      sendLog('info', `Session deleted: ${id}`, 'Session');
-    }
+    ensureDbInitialized();
+    sessionRepo.deleteSession(id);
+    sessions = sessions.filter(s => s.id !== id);
+    if (sessions.length === 0) sessions = [createDefaultSession()];
+    if (activeSessionId === id) activeSessionId = sessions[0].id;
+    sendLog('info', `Session deleted: ${id}`, 'Session');
   });
   ipcMain.handle(IPC.SESSION_RENAME, (_, id: string, name: string) => {
-    const session = sessions.find((s) => s.id === id);
+    ensureDbInitialized();
+    sessionRepo.updateSession(id, { title: name });
+    const session = sessions.find(s => s.id === id);
     if (session) {
       session.name = name;
       session.updatedAt = new Date().toISOString();
-      saveSessionsToDisk(sessions);
     }
   });
   ipcMain.handle(IPC.SESSION_SET_WORKSPACE, (_, id: string, path: string) => {
     const workspace = setWorkspace(path);
+    ensureDbInitialized();
+    sessionRepo.updateSession(id, {
+      workspacePath: workspace.path,
+      workspaceName: workspace.name,
+    });
     const session = sessions.find((s) => s.id === id);
     if (!session) throw new Error('Session not found');
     session.workspacePath = workspace.path;
     session.workspaceName = workspace.name;
     session.updatedAt = new Date().toISOString();
-    saveSessionsToDisk(sessions);
     return session;
   });
 
@@ -671,11 +792,58 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] });
     return result.canceled ? null : result.filePaths[0];
   });
+  ipcMain.handle(IPC.FILE_ATTACHMENTS_PICK, async (): Promise<ChatAttachment[]> => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Images and text files', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'txt', 'md', 'ts', 'tsx', 'js', 'jsx', 'json', 'css', 'html', 'py', 'rs', 'go', 'yaml', 'yml', 'toml', 'sh', 'sql'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    if (result.canceled) return [];
+    const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
+    const textExtensions = new Set(['.txt', '.md', '.ts', '.tsx', '.js', '.jsx', '.json', '.css', '.html', '.py', '.rs', '.go', '.yaml', '.yml', '.toml', '.sh', '.sql']);
+    return result.filePaths.slice(0, 10).map((filePath) => {
+      const extension = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
+      const size = statSync(filePath).size;
+      const kind: ChatAttachment['kind'] = imageExtensions.has(extension) ? 'image' : textExtensions.has(extension) ? 'text' : 'file';
+      return {
+        name: basename(filePath),
+        path: filePath,
+        size,
+        kind,
+        ...(kind === 'text' && size <= 1024 * 1024 ? { content: readFileSync(filePath, 'utf-8') } : {}),
+      };
+    });
+  });
   ipcMain.handle(IPC.FILE_LIST, async (_, path?: string) => listFiles(path));
-  ipcMain.handle(IPC.FILE_READ, (_, path: string) => readWorkspaceFile(path));
+  ipcMain.handle(IPC.FILE_READ, (_, filePath: string) => {
+    // Allow reading from truncated output temp directory
+    const truncatedDir = join(os.tmpdir(), 'mimo-truncated-outputs');
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    if (normalizedPath.startsWith(truncatedDir.replace(/\\/g, '/'))) {
+      if (!existsSync(filePath)) throw new Error('File not found');
+      const stats = statSync(filePath);
+      if (!stats.isFile()) throw new Error('Path is not a file');
+      return readFileSync(filePath, 'utf8');
+    }
+    return readWorkspaceFile(filePath);
+  });
   ipcMain.handle(IPC.FILE_WRITE, (_, path: string, content: string) => {
     writeWorkspaceFile(path, content);
     return { success: true };
+  });
+
+  // Read truncated output file from temp directory
+  ipcMain.handle(IPC.TOOL_READ_OUTPUT, (_, filePath: string) => {
+    const truncatedDir = join(os.tmpdir(), 'mimo-truncated-outputs');
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    const normalizedDir = truncatedDir.replace(/\\/g, '/');
+    if (!normalizedPath.startsWith(normalizedDir)) {
+      throw new Error('Access denied: path outside truncated output directory');
+    }
+    if (!existsSync(filePath)) throw new Error('File not found');
+    return readFileSync(filePath, 'utf8');
   });
 
   ipcMain.on(IPC.WINDOW_MINIMIZE, () => mainWindow.minimize());
@@ -734,6 +902,29 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     } catch (e) { return { success: false, error: String(e) }; }
   });
 
+  ipcMain.handle(IPC.MEMORY_SEARCH, async (_event, query: string, options?: { scope?: string; limit?: number }) => {
+    try {
+      const agent = agentService.getAgent?.();
+      const memoryService = agent?.getMemoryService?.();
+      if (!memoryService) return { results: [], error: 'Memory service not initialized' };
+      const results = memoryService.search(query, {
+        limit: options?.limit ?? 10,
+        scope: options?.scope as 'global' | 'project' | 'session' | undefined,
+      });
+      return { results };
+    } catch (e) { return { results: [], error: String(e) }; }
+  });
+
+  ipcMain.handle(IPC.MEMORY_RECONCILE, async () => {
+    try {
+      const agent = agentService.getAgent?.();
+      const memoryService = agent?.getMemoryService?.();
+      if (!memoryService) return { success: false, error: 'Memory service not initialized' };
+      const result = memoryService.reconcile();
+      return { success: true, ...result };
+    } catch (e) { return { success: false, error: String(e) }; }
+  });
+
   ipcMain.handle(IPC.COMPACT, async () => {
     try {
       const agent = agentService.getAgent?.();
@@ -768,38 +959,93 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return { sessions };
   });
 
-  // Message persistence per session
+  // Message persistence per session (SQLite-backed with JSON fallback)
   const MESSAGES_DIR = join(app.getPath('userData'), 'messages');
 
-  // Sanitize session ID to prevent path traversal
   function sanitizeSessionId(sessionId: string): string {
-    // Only allow alphanumeric, hyphens, underscores, and dots
     const sanitized = sessionId.replace(/[^a-zA-Z0-9_.-]/g, '_');
-    // Remove any path separators
     return sanitized.replace(/\.\./g, '_').replace(/[/\\]/g, '_');
   }
 
   ipcMain.handle(IPC.MESSAGES_SAVE, async (_event, sessionId: string, messages: unknown[]) => {
     try {
-      if (!existsSync(MESSAGES_DIR)) mkdirSync(MESSAGES_DIR, { recursive: true });
-      const safeId = sanitizeSessionId(sessionId);
-      const filePath = join(MESSAGES_DIR, `${safeId}.json`);
-      writeFileSync(filePath, JSON.stringify(messages, null, 2));
+      ensureDbInitialized();
+      // 支持两种格式：直接数组，或 { messages, usage } 包装
+      let msgArray: Array<{ id?: string; role: string; content: string; timestamp: number }> = [];
+      if (Array.isArray(messages)) {
+        msgArray = messages as typeof msgArray;
+      } else if (messages && typeof messages === 'object' && 'messages' in (messages as Record<string, unknown>)) {
+        msgArray = (messages as { messages: typeof msgArray }).messages;
+      }
+      messageRepo.saveMessages(sessionId, msgArray.map(m => ({
+        id: m.id,
+        role: m.role,
+        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+        timestamp: m.timestamp,
+      })));
       return { success: true };
-    } catch (e) { return { success: false, error: String(e) }; }
+    } catch (e) {
+      // 回退到 JSON 文件
+      try {
+        if (!existsSync(MESSAGES_DIR)) mkdirSync(MESSAGES_DIR, { recursive: true });
+        const safeId = sanitizeSessionId(sessionId);
+        const filePath = join(MESSAGES_DIR, `${safeId}.json`);
+        writeFileSync(filePath, JSON.stringify(messages, null, 2));
+        return { success: true };
+      } catch (e2) { return { success: false, error: String(e2) }; }
+    }
   });
 
   ipcMain.handle(IPC.MESSAGES_LOAD, async (_event, sessionId: string) => {
     try {
-      const safeId = sanitizeSessionId(sessionId);
-      const filePath = join(MESSAGES_DIR, `${safeId}.json`);
-      if (!existsSync(filePath)) return { messages: [] };
-      const data = readFileSync(filePath, 'utf-8');
-      return { messages: JSON.parse(data) };
+      ensureDbInitialized();
+      const rows = messageRepo.listMessages(sessionId);
+      return { messages: rows.map(r => ({
+        id: r.id,
+        role: r.role,
+        content: r.content,
+        timestamp: r.timestamp,
+      })) };
     } catch (err) {
-      console.warn('[MESSAGES_LOAD] Failed to load messages:', err);
-      return { messages: [] };
+      // 回退到 JSON 文件
+      try {
+        const safeId = sanitizeSessionId(sessionId);
+        const filePath = join(MESSAGES_DIR, `${safeId}.json`);
+        if (!existsSync(filePath)) return { messages: [] };
+        const data = readFileSync(filePath, 'utf-8');
+        return { messages: JSON.parse(data) };
+      } catch {
+        return { messages: [] };
+      }
     }
+  });
+
+  // === 新增：分叉、归档、搜索会话 ===
+  ipcMain.handle(IPC.SESSION_FORK, (_, id: string, title: string) => {
+    ensureDbInitialized();
+    const row = sessionRepo.forkSession(id, title);
+    if (!row) return null;
+    const session = rowToSession(row);
+    sessions.push(session);
+    sendLog('info', `Session forked: ${title} from ${id}`, 'Session');
+    return session;
+  });
+
+  ipcMain.handle(IPC.SESSION_ARCHIVE, (_, id: string) => {
+    ensureDbInitialized();
+    const row = sessionRepo.archiveSession(id);
+    if (!row) return null;
+    const session = rowToSession(row);
+    const idx = sessions.findIndex(s => s.id === id);
+    if (idx >= 0) sessions[idx] = session;
+    sendLog('info', `Session archived: ${id}`, 'Session');
+    return session;
+  });
+
+  ipcMain.handle(IPC.SESSION_SEARCH, (_, query: string) => {
+    ensureDbInitialized();
+    const rows = sessionRepo.searchSessions(query);
+    return rows.map(rowToSession);
   });
 
   ipcMain.handle(IPC.GIT_INFO, async () => {
@@ -887,6 +1133,59 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const servers = loadMcpServers().map(s => s.id === id ? { ...s, enabled } : s);
     saveMcpServers(servers);
     return { success: true };
+  });
+
+  // MCP runtime connect/disconnect/tools
+  ipcMain.handle(IPC.MCP_CONNECT, async (_event, name: string) => {
+    try {
+      const agent = agentService.getAgent();
+      const mcpManager = (agent as unknown as { getMcpManager?: () => unknown })?.getMcpManager?.();
+      if (!mcpManager) return { success: false, error: 'MCP manager not initialized' };
+      const tools = await (mcpManager as { connect: (name: string) => Promise<unknown[]> }).connect(name);
+      sendLog('info', `MCP server connected: ${name} (${tools.length} tools)`, 'MCP');
+      return { success: true, tools };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      sendLog('error', `MCP connect failed: ${name} - ${message}`, 'MCP');
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle(IPC.MCP_DISCONNECT, async (_event, name: string) => {
+    try {
+      const agent = agentService.getAgent();
+      const mcpManager = (agent as unknown as { getMcpManager?: () => unknown })?.getMcpManager?.();
+      if (!mcpManager) return { success: false, error: 'MCP manager not initialized' };
+      await (mcpManager as { disconnect: (name: string) => Promise<void> }).disconnect(name);
+      sendLog('info', `MCP server disconnected: ${name}`, 'MCP');
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC.MCP_LIST_TOOLS, async () => {
+    try {
+      const agent = agentService.getAgent();
+      const mcpManager = (agent as unknown as { getMcpManager?: () => unknown })?.getMcpManager?.();
+      if (!mcpManager) return { tools: [] };
+      const tools = (mcpManager as { getAllTools: () => unknown[] }).getAllTools();
+      return { tools };
+    } catch (err) {
+      return { tools: [], error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC.MCP_STATUS, async () => {
+    try {
+      const agent = agentService.getAgent();
+      const mcpManager = (agent as unknown as { getMcpManager?: () => unknown })?.getMcpManager?.();
+      if (!mcpManager) return { servers: [] };
+      const servers = (mcpManager as { getServerStatus: () => unknown[] }).getServerStatus();
+      return { servers };
+    } catch (err) {
+      return { servers: [], error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   // === Automation ===
@@ -1306,6 +1605,136 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // === Console Log Buffer ===
   ipcMain.handle(IPC.CONSOLE_GET_LOGS, () => logBuffer);
+
+  // === Task Management ===
+  ipcMain.handle(IPC.TASK_LIST, (_event, sessionId?: string, statusFilter?: string) => {
+    try {
+      const agent = agentService.getAgent();
+      const taskRegistry = (agent as unknown as { getTaskRegistry?: () => unknown })?.getTaskRegistry?.();
+      if (!taskRegistry) return { tasks: [], error: 'Task registry not initialized' };
+
+      const sid = sessionId || (agent as unknown as { getSessionId?: () => string })?.getSessionId?.() || 'default';
+      const filter = statusFilter ? { status: statusFilter } : undefined;
+      const tasks = (taskRegistry as { list: (sid: string, filter?: { status: string }) => unknown[] }).list(sid, filter);
+      return { tasks };
+    } catch (err) {
+      console.warn('[TASK_LIST] Failed:', err);
+      return { tasks: [], error: String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC.TASK_CREATE, (_event, summary: string, parentId?: string, sessionId?: string) => {
+    try {
+      const agent = agentService.getAgent();
+      const taskRegistry = (agent as unknown as { getTaskRegistry?: () => unknown })?.getTaskRegistry?.();
+      if (!taskRegistry) return { success: false, error: 'Task registry not initialized' };
+
+      const sid = sessionId || (agent as unknown as { getSessionId?: () => string })?.getSessionId?.() || 'default';
+      const task = (taskRegistry as { create: (sid: string, summary: string, parentId?: string) => unknown }).create(sid, summary, parentId);
+      return { success: true, task };
+    } catch (err) {
+      console.warn('[TASK_CREATE] Failed:', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC.TASK_UPDATE, (_event, taskId: string, updates: Record<string, unknown>, sessionId?: string) => {
+    try {
+      const agent = agentService.getAgent();
+      const taskRegistry = (agent as unknown as { getTaskRegistry?: () => unknown })?.getTaskRegistry?.();
+      if (!taskRegistry) return { success: false, error: 'Task registry not initialized' };
+
+      const sid = sessionId || (agent as unknown as { getSessionId?: () => string })?.getSessionId?.() || 'default';
+      const registry = taskRegistry as {
+        update: (sid: string, taskId: string, updates: Record<string, unknown>) => unknown;
+        start: (sid: string, taskId: string) => unknown;
+        block: (sid: string, taskId: string) => unknown;
+        unblock: (sid: string, taskId: string) => unknown;
+        done: (sid: string, taskId: string) => unknown;
+        abandon: (sid: string, taskId: string) => unknown;
+        rename: (sid: string, taskId: string, newSummary: string) => unknown;
+      };
+
+      // Handle status transitions via dedicated methods
+      if (updates.status) {
+        let task: unknown;
+        switch (updates.status) {
+          case 'in_progress': task = registry.start(sid, taskId); break;
+          case 'blocked': task = registry.block(sid, taskId); break;
+          case 'unblock': task = registry.unblock(sid, taskId); break;
+          case 'done': task = registry.done(sid, taskId); break;
+          case 'abandoned': task = registry.abandon(sid, taskId); break;
+          default: task = registry.update(sid, taskId, updates);
+        }
+        return { success: true, task };
+      }
+
+      // Handle rename
+      if (updates.summary) {
+        const task = registry.rename(sid, taskId, updates.summary as string);
+        return { success: true, task };
+      }
+
+      // Generic update
+      const task = registry.update(sid, taskId, updates);
+      return { success: true, task };
+    } catch (err) {
+      console.warn('[TASK_UPDATE] Failed:', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // Plugin management handlers
+  ipcMain.handle(IPC.PLUGIN_LIST, () => {
+    try {
+      const agent = agentService.getAgent?.();
+      const pluginRegistry = agent?.getPluginRegistry?.();
+      if (!pluginRegistry) return { plugins: [] };
+      return { plugins: pluginRegistry.listPlugins() };
+    } catch (err) {
+      console.warn('[PLUGIN_LIST] Failed:', err);
+      return { plugins: [] };
+    }
+  });
+
+  ipcMain.handle(IPC.PLUGIN_ENABLE, (_event, name: string) => {
+    try {
+      const agent = agentService.getAgent?.();
+      const pluginRegistry = agent?.getPluginRegistry?.();
+      if (!pluginRegistry) return { success: false, error: 'Plugin registry not initialized' };
+      const result = pluginRegistry.setEnabled(name, true);
+      return { success: result };
+    } catch (err) {
+      console.warn('[PLUGIN_ENABLE] Failed:', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC.PLUGIN_DISABLE, (_event, name: string) => {
+    try {
+      const agent = agentService.getAgent?.();
+      const pluginRegistry = agent?.getPluginRegistry?.();
+      if (!pluginRegistry) return { success: false, error: 'Plugin registry not initialized' };
+      const result = pluginRegistry.setEnabled(name, false);
+      return { success: result };
+    } catch (err) {
+      console.warn('[PLUGIN_DISABLE] Failed:', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC.PLUGIN_RELOAD, async () => {
+    try {
+      const agent = agentService.getAgent?.();
+      const pluginRegistry = agent?.getPluginRegistry?.();
+      if (!pluginRegistry) return { success: false, error: 'Plugin registry not initialized' };
+      await pluginRegistry.reload();
+      return { success: true, plugins: pluginRegistry.listPlugins() };
+    } catch (err) {
+      console.warn('[PLUGIN_RELOAD] Failed:', err);
+      return { success: false, error: String(err) };
+    }
+  });
 }
 
 /**

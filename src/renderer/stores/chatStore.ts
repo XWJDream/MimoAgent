@@ -85,13 +85,15 @@ interface ChatState {
   usage: UsageStats;
   activeSessionId: string;
   subagents: SubagentInfo[];
+  inputHistory: string[];
+  historyIndex: number;
 
   addMessage: (message: Message) => void;
   setThinking: (thinking: boolean) => void;
   setStreaming: (streaming: boolean) => void;
   appendToken: (token: string) => void;
   addToolCall: (tool: Pick<ToolCallInfo, 'name' | 'args'>) => void;
-  finishToolCall: (result: Pick<ToolCallInfo, 'name' | 'output'> & { isError: boolean }) => void;
+  finishToolCall: (result: Pick<ToolCallInfo, 'name' | 'output'> & { isError: boolean; truncated?: boolean; outputPath?: string }) => void;
   finishResponse: (usage: { tokens: number; cost: number; cachedTokens?: number; promptTokens?: number; completionTokens?: number }) => void;
   failResponse: (error: string) => void;
   clearMessages: (sessionId?: string) => void;
@@ -103,10 +105,36 @@ interface ChatState {
   addSubagent: (agent: SubagentInfo) => void;
   updateSubagent: (id: string, updates: Partial<SubagentInfo>) => void;
   clearSubagents: () => void;
+  addToHistory: (input: string) => void;
+  navigateHistory: (direction: 'up' | 'down') => string | null;
+  resetHistoryIndex: () => void;
 }
 
 let responseId = '';
 let lastPromptTokens = 0; // Track previous turn's prompt tokens for cache estimation
+
+// Input history localStorage persistence
+const INPUT_HISTORY_KEY = 'mimo:inputHistory';
+const MAX_HISTORY_SIZE = 100;
+
+function loadInputHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(INPUT_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.slice(0, MAX_HISTORY_SIZE) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveInputHistory(history: string[]): void {
+  try {
+    localStorage.setItem(INPUT_HISTORY_KEY, JSON.stringify(history.slice(0, MAX_HISTORY_SIZE)));
+  } catch {
+    // localStorage quota exceeded or unavailable — silently ignore
+  }
+}
 
 // Session data interface (messages + usage)
 interface SessionData {
@@ -146,6 +174,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   toolCalls: [],
   activeSessionId: 'default',
   subagents: [],
+  inputHistory: loadInputHistory(),
+  historyIndex: -1,
   usage: {
     sessionTokens: 0,
     sessionCost: 0,
@@ -234,6 +264,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...nextCalls[runningIndex],
         status: result.isError ? 'error' : 'done',
         output: result.output,
+        truncated: result.truncated,
+        outputPath: result.outputPath,
       };
 
       return { toolCalls: nextCalls };
@@ -526,4 +558,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   clearSubagents: () => set({ subagents: [] }),
+
+  addToHistory: (input: string) => {
+    if (!input.trim()) return;
+    set((state) => {
+      const history = [input, ...state.inputHistory.filter((h) => h !== input)].slice(0, MAX_HISTORY_SIZE);
+      saveInputHistory(history);
+      return { inputHistory: history, historyIndex: -1 };
+    });
+  },
+
+  navigateHistory: (direction: 'up' | 'down') => {
+    const { inputHistory, historyIndex } = get();
+    if (inputHistory.length === 0) return null;
+
+    let newIndex: number;
+    if (direction === 'up') {
+      newIndex = historyIndex < inputHistory.length - 1 ? historyIndex + 1 : historyIndex;
+    } else {
+      newIndex = historyIndex > -1 ? historyIndex - 1 : -1;
+    }
+
+    set({ historyIndex: newIndex });
+    return newIndex >= 0 ? inputHistory[newIndex] : '';
+  },
+
+  resetHistoryIndex: () => set({ historyIndex: -1 }),
 }));

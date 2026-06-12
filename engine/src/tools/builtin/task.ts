@@ -1,5 +1,169 @@
+/**
+ * 统一任务工具 — 替代原来的 task_create / task_update / task_list
+ * 支持 create, list, get, start, block, unblock, done, abandon, rename 操作
+ */
 import { BaseTool, type ToolResult, type ToolContext } from '../base.js';
 import type { ToolDefinition } from '../schema.js';
+import type { TaskRegistry } from '../../task/registry.js';
+import type { TaskStatus } from '../../task/schema.js';
+
+export class TaskTool extends BaseTool {
+  readonly name = 'task';
+  readonly description = '管理任务。操作: create, list, get, start, block, unblock, done, abandon, rename';
+  readonly riskLevel = 'write' as const;
+  readonly categories = ['task' as const];
+
+  private registry: TaskRegistry;
+  private sessionId: string;
+
+  constructor(registry: TaskRegistry, sessionId: string) {
+    super();
+    this.registry = registry;
+    this.sessionId = sessionId;
+  }
+
+  readonly parameters: ToolDefinition = {
+    type: 'function',
+    function: {
+      name: 'task',
+      description: '管理任务。操作: create, list, get, start, block, unblock, done, abandon, rename',
+      parameters: {
+        type: 'object',
+        properties: {
+          operation: {
+            type: 'string',
+            enum: ['create', 'list', 'get', 'start', 'block', 'unblock', 'done', 'abandon', 'rename'],
+            description: '操作类型',
+          },
+          task_id: {
+            type: 'string',
+            description: '任务 ID (T1, T1.1 等)，get/start/block/unblock/done/abandon/rename 时必填',
+          },
+          summary: {
+            type: 'string',
+            description: '任务描述，create/rename 时必填',
+          },
+          parent_id: {
+            type: 'string',
+            description: '父任务 ID，create 时可选（用于创建子任务）',
+          },
+          status_filter: {
+            type: 'string',
+            enum: ['open', 'in_progress', 'blocked', 'done', 'abandoned'],
+            description: '状态过滤，list 时可选',
+          },
+        },
+        required: ['operation'],
+      },
+    },
+  };
+
+  async execute(args: Record<string, unknown>, _context: ToolContext): Promise<ToolResult> {
+    const { operation, task_id, summary, parent_id, status_filter } = args as {
+      operation: string;
+      task_id?: string;
+      summary?: string;
+      parent_id?: string;
+      status_filter?: string;
+    };
+
+    try {
+      switch (operation) {
+        case 'create': {
+          if (!summary) return { output: '缺少 summary 参数', isError: true };
+          const task = this.registry.create(this.sessionId, summary, parent_id);
+          return { output: `任务已创建: [${task.id}] ${task.summary}`, isError: false };
+        }
+
+        case 'list': {
+          const filter = status_filter ? { status: status_filter as TaskStatus } : undefined;
+          const tasks = this.registry.list(this.sessionId, filter);
+          if (tasks.length === 0) return { output: '暂无任务。', isError: false };
+
+          const statusIcon: Record<string, string> = {
+            open: '[ ]',
+            in_progress: '[~]',
+            blocked: '[!]',
+            done: '[x]',
+            abandoned: '[-]',
+          };
+
+          const lines = tasks.map(t => {
+            const parentInfo = t.parentId ? ` (${t.parentId}的子任务)` : '';
+            return `${statusIcon[t.status]} ${t.id}: ${t.summary}${parentInfo}`;
+          });
+          return { output: lines.join('\n'), isError: false };
+        }
+
+        case 'get': {
+          if (!task_id) return { output: '缺少 task_id 参数', isError: true };
+          const task = this.registry.get(this.sessionId, task_id);
+          if (!task) return { output: `任务不存在: ${task_id}`, isError: true };
+          return {
+            output: [
+              `ID: ${task.id}`,
+              `状态: ${task.status}`,
+              `描述: ${task.summary}`,
+              task.parentId ? `父任务: ${task.parentId}` : null,
+              task.owner ? `归属: ${task.owner}` : null,
+              `创建: ${new Date(task.createdAt).toLocaleString()}`,
+              `更新: ${new Date(task.updatedAt).toLocaleString()}`,
+              task.endedAt ? `结束: ${new Date(task.endedAt).toLocaleString()}` : null,
+            ].filter(Boolean).join('\n'),
+            isError: false,
+          };
+        }
+
+        case 'start': {
+          if (!task_id) return { output: '缺少 task_id 参数', isError: true };
+          const task = this.registry.start(this.sessionId, task_id);
+          return { output: `任务已开始: [${task.id}] ${task.summary}`, isError: false };
+        }
+
+        case 'block': {
+          if (!task_id) return { output: '缺少 task_id 参数', isError: true };
+          const task = this.registry.block(this.sessionId, task_id);
+          return { output: `任务已阻塞: [${task.id}] ${task.summary}`, isError: false };
+        }
+
+        case 'unblock': {
+          if (!task_id) return { output: '缺少 task_id 参数', isError: true };
+          const task = this.registry.unblock(this.sessionId, task_id);
+          return { output: `任务已解除阻塞: [${task.id}] ${task.summary}`, isError: false };
+        }
+
+        case 'done': {
+          if (!task_id) return { output: '缺少 task_id 参数', isError: true };
+          const task = this.registry.done(this.sessionId, task_id);
+          return { output: `任务已完成: [${task.id}] ${task.summary}`, isError: false };
+        }
+
+        case 'abandon': {
+          if (!task_id) return { output: '缺少 task_id 参数', isError: true };
+          const task = this.registry.abandon(this.sessionId, task_id);
+          return { output: `任务已放弃: [${task.id}] ${task.summary}`, isError: false };
+        }
+
+        case 'rename': {
+          if (!task_id || !summary) return { output: '缺少 task_id 或 summary 参数', isError: true };
+          const task = this.registry.rename(this.sessionId, task_id, summary);
+          return { output: `任务已重命名: [${task.id}] ${task.summary}`, isError: false };
+        }
+
+        default:
+          return { output: `未知操作: ${operation}`, isError: true };
+      }
+    } catch (err) {
+      return {
+        output: `任务操作失败: ${err instanceof Error ? err.message : String(err)}`,
+        isError: true,
+      };
+    }
+  }
+}
+
+// 保留旧的 InMemoryTaskStore 和旧工具类以兼容现有测试
+// 但在实际注册时使用新的 TaskTool
 
 export interface Task {
   id: string;

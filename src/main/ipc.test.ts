@@ -83,7 +83,47 @@ vi.mock('./tts-store.js', () => ({
   },
 }));
 
-const { registerIpcHandlers } = await import('./ipc.js');
+vi.mock('./storage/database.js', () => ({
+  initDatabase: vi.fn(),
+  getDatabase: vi.fn(),
+  _resetDatabase: vi.fn(),
+}));
+
+vi.mock('./storage/session-repo.js', () => ({
+  listSessions: vi.fn().mockReturnValue([]),
+  getSession: vi.fn().mockReturnValue(undefined),
+  createSession: vi.fn().mockImplementation((data: { id?: string; title: string }) => ({
+    id: data.id || `${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`,
+    title: data.title,
+    workspace_path: '',
+    workspace_name: '',
+    parent_id: null,
+    status: 'active',
+    created_at: Date.now(),
+    updated_at: Date.now(),
+    message_count: 0,
+  })),
+  updateSession: vi.fn(),
+  deleteSession: vi.fn(),
+  archiveSession: vi.fn(),
+  forkSession: vi.fn(),
+  searchSessions: vi.fn().mockReturnValue([]),
+}));
+
+vi.mock('./storage/message-repo.js', () => ({
+  listMessages: vi.fn().mockReturnValue([]),
+  saveMessages: vi.fn().mockReturnValue(0),
+  appendMessage: vi.fn(),
+  deleteMessagesBySession: vi.fn(),
+  getMessageCount: vi.fn().mockReturnValue(0),
+}));
+
+vi.mock('./storage/migrate.js', () => ({
+  migrateFromJson: vi.fn().mockResolvedValue({ sessions: 0, messages: 0 }),
+}));
+
+const { migrateStoredConfig, registerIpcHandlers } = await import('./ipc.js');
+const { dialog: mockedDialog } = await import('electron');
 
 const mockWindow = {
   webContents: { send: vi.fn() },
@@ -98,6 +138,14 @@ const mockWindow = {
 registerIpcHandlers(mockWindow as unknown as import('electron').BrowserWindow);
 
 describe('ipc', () => {
+  describe('config migration', () => {
+    it('preserves a user theme after the sakura migration has run', () => {
+      const result = migrateStoredConfig({ configSchemaVersion: 1, theme: 'dark' });
+      expect(result.migrated).toBe(false);
+      expect(result.config.theme).toBe('dark');
+    });
+  });
+
   describe('CONFIG_GET - maskApiKey', () => {
     it('should mask API key showing only first 4 and last 4 characters', () => {
       const handler = handlers.get('config:get')!;
@@ -116,6 +164,18 @@ describe('ipc', () => {
       const handler = handlers.get('config:get')!;
       const result = handler();
       expect(result.apiKey).toBeUndefined();
+    });
+
+    it('should migrate an unversioned config to sakura without exposing the schema version', () => {
+      const handler = handlers.get('config:get')!;
+      const result = handler();
+      expect(result.theme).toBe('sakura');
+      expect(result.configSchemaVersion).toBeUndefined();
+      expect(mockWriteFileSync).toHaveBeenCalledWith(
+        expect.stringContaining('config.json'),
+        expect.stringContaining('"configSchemaVersion": 1'),
+        'utf-8',
+      );
     });
   });
 
@@ -161,6 +221,12 @@ describe('ipc', () => {
       expect(() => handler({}, 'toolPreset', 'act')).not.toThrow();
     });
 
+    it('should accept sakura as a theme', () => {
+      const handler = handlers.get('config:set')!;
+      expect(() => handler({}, 'theme', 'sakura')).not.toThrow();
+      expect(() => handler({}, 'theme', 'invalid')).toThrow();
+    });
+
     it('should validate sandboxEnabled as boolean', () => {
       const handler = handlers.get('config:set')!;
       expect(() => handler({}, 'sandboxEnabled', 'yes')).toThrow();
@@ -195,40 +261,86 @@ describe('ipc', () => {
     });
   });
 
-  describe('MESSAGES_SAVE - sanitizeSessionId', () => {
-    it('should sanitize path traversal sequences in session ID', async () => {
-      mockWriteFileSync.mockClear();
+  describe('FILE_ATTACHMENTS_PICK', () => {
+    it('returns selected text files with readable content', async () => {
+      vi.mocked(mockedDialog.showOpenDialog).mockResolvedValueOnce({
+        canceled: false,
+        filePaths: ['C:\\notes.md'],
+      });
+      const handler = handlers.get('file:attachments-pick')!;
+      const result = await handler({});
+
+      expect(result).toEqual([expect.objectContaining({
+        name: 'notes.md',
+        path: 'C:\\notes.md',
+        kind: 'text',
+        content: '{}',
+      })]);
+    });
+  });
+
+  describe('MESSAGES_SAVE - SQLite storage', () => {
+    it('should save messages via SQLite repo', async () => {
       const handler = handlers.get('messages:save')!;
-      const result = await handler({}, '../../../etc/passwd', []);
+      const result = await handler({}, 'test-session', [{ id: 'm1', role: 'user', content: 'hello', timestamp: Date.now() }]);
       expect(result.success).toBe(true);
+    });
+
+    it('should handle empty messages array', async () => {
+      const handler = handlers.get('messages:save')!;
+      const result = await handler({}, 'test-session', []);
+      expect(result.success).toBe(true);
+    });
+
+    it('should handle wrapped message format', async () => {
+      const handler = handlers.get('messages:save')!;
+      const result = await handler({}, 'test-session', {
+        messages: [{ id: 'm1', role: 'user', content: 'hello', timestamp: Date.now() }],
+        usage: { sessionTokens: 100 },
+      });
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe('MESSAGES_SAVE - path sanitization via JSON fallback', () => {
+    it('should sanitize path traversal in session ID when SQLite fails', async () => {
+      // Force JSON fallback by making saveMessages throw
+      const messageRepoModule = await import('./storage/message-repo.js');
+      const origImpl = vi.mocked(messageRepoModule.saveMessages).getMockImplementation();
+      vi.mocked(messageRepoModule.saveMessages).mockImplementationOnce(() => { throw new Error('SQLite unavailable'); });
+
+      const handler = handlers.get('messages:save')!;
+      mockWriteFileSync.mockClear();
+      await handler({}, '..\\..\\secret', []);
+
       const writeCall = mockWriteFileSync.mock.calls.find((c: unknown[]) =>
         typeof c[0] === 'string' && (c[0] as string).endsWith('.json')
       );
       expect(writeCall).toBeDefined();
-      expect((writeCall as unknown[])[0]).not.toContain('..');
-    });
-
-    it('should sanitize backslash path separators in session ID', async () => {
-      mockWriteFileSync.mockClear();
-      const handler = handlers.get('messages:save')!;
-      await handler({}, '..\\..\\secret', []);
-      const writeCall = mockWriteFileSync.mock.calls.find((c: unknown[]) =>
-        typeof c[0] === 'string' && (c[0] as string).endsWith('.json')
-      );
-      // The filename portion should not contain the original malicious input
-      const filename = ((writeCall as unknown[])[0] as string).split(/[/\\]/).pop()!;
+      const filename = (writeCall![0] as string).split(/[/\\]/).pop()!;
       expect(filename).not.toContain('..');
       expect(filename).toBe('____secret.json');
+
+      // Restore original mock
+      if (origImpl) vi.mocked(messageRepoModule.saveMessages).mockImplementation(origImpl);
     });
 
-    it('should keep normal session IDs intact', async () => {
-      mockWriteFileSync.mockClear();
+    it('should preserve normal session ID in JSON fallback path', async () => {
+      const messageRepoModule = await import('./storage/message-repo.js');
+      const origImpl = vi.mocked(messageRepoModule.saveMessages).getMockImplementation();
+      vi.mocked(messageRepoModule.saveMessages).mockImplementationOnce(() => { throw new Error('SQLite unavailable'); });
+
       const handler = handlers.get('messages:save')!;
+      mockWriteFileSync.mockClear();
       await handler({}, 'normal-session-id', []);
+
       const writeCall = mockWriteFileSync.mock.calls.find((c: unknown[]) =>
         typeof c[0] === 'string' && (c[0] as string).endsWith('.json')
       );
-      expect((writeCall as unknown[])[0]).toContain('normal-session-id');
+      expect(writeCall).toBeDefined();
+      expect(writeCall![0]).toContain('normal-session-id');
+
+      if (origImpl) vi.mocked(messageRepoModule.saveMessages).mockImplementation(origImpl);
     });
   });
 });

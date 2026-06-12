@@ -1,8 +1,9 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { useConfigStore } from "../../stores/configStore";
 import { ModelSelector } from "./ModelSelector";
 import { PermissionMode } from "./PermissionMode";
-import { Moon, Sun } from "lucide-react";
+import { Flower2, Moon, Sun } from "lucide-react";
 import { useT } from "../../i18n";
 import { useToast } from "../common/Toast";
 
@@ -38,14 +39,13 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     toast('API Key 已清除', 'success');
   };
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex flex-col"
+      className="settings-overlay fixed inset-0 z-50 flex flex-col"
       style={{
         background:
           "linear-gradient(145deg, var(--bg-surface) 0%, color-mix(in srgb, var(--bg-surface) 95%, var(--bg-base)) 100%)",
         animation: "settingsFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards",
-        padding: "20px",
       }}
     >
       <style>{`
@@ -125,12 +125,9 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
       `}</style>
 
       {/* Header */}
-      <div className="flex items-center justify-center px-8 py-6 shrink-0">
+      <div className="settings-header flex items-center justify-center shrink-0">
         <div
           className="flex items-center gap-4"
-          style={{
-            padding: "70px",
-          }}
         >
           <div
             className="w-12 h-12 rounded-xl flex items-center justify-center"
@@ -173,8 +170,8 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto settings-scroll flex justify-center">
-        <div className="w-full max-w-3xl px-12 py-10 space-y-10">
+      <div className="flex-1 min-h-0 overflow-y-auto settings-scroll flex justify-center">
+        <div className="settings-content w-full max-w-3xl">
           {/* Model */}
           <div className="settings-section space-y-3">
             <label
@@ -424,8 +421,8 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             >
               {t('settings.theme')}
             </label>
-            <div className="grid grid-cols-2 gap-4">
-              {(["dark", "light"] as const).map((theme) => (
+            <div className="grid grid-cols-3 gap-4">
+              {(["dark", "light", "sakura"] as const).map((theme) => (
                 <button
                   key={theme}
                   type="button"
@@ -445,9 +442,9 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         : "none",
                   }}
                 >
-                  {theme === "dark" ? <Moon size={18} /> : <Sun size={18} />}
+                  {theme === "dark" ? <Moon size={18} /> : theme === "light" ? <Sun size={18} /> : <Flower2 size={18} />}
                   <span className="font-semibold">
-                    {theme === "dark" ? t('settings.dark') : t('settings.light')}
+                    {theme === "dark" ? t('settings.dark') : theme === "light" ? t('settings.light') : t('settings.sakura')}
                   </span>
                 </button>
               ))}
@@ -457,8 +454,8 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
       </div>
 
       {/* Footer */}
-      <div className="shrink-0 flex justify-center">
-        <div className="w-full max-w-3xl px-12 py-5 flex items-center justify-center gap-3">
+      <div className="settings-footer shrink-0 flex justify-center">
+        <div className="w-full max-w-3xl flex items-center justify-end gap-3">
           <button
             onClick={onClose}
             className="btn-secondary"
@@ -475,6 +472,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
